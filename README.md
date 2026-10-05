@@ -25,6 +25,10 @@
 │   ├── content.ts       # Content Script (Shadow DOM 隔离挂载)
 │   ├── content/         # Content Script 内部组件
 │   └── popup/           # 弹出窗口 (App.vue, main.ts)
+├── docs/                # 📚 本地离线开发与 API 速查手册
+│   ├── UNOCSS_GUIDE.md  # UnoCSS 语法、图标、预设与实用类速查
+│   ├── UI_COMPONENTS.md # components/ui 组件清单与属性调用示例
+│   └── WXT_EXTENSION_API.md # WXT 扩展生命周期、通信与存储指南
 ├── lib/                 # 标准库与路径别名支持 (lib/utils -> utils/cn)
 ├── services/            # 业务服务层
 │   ├── db.ts            # Dexie IndexedDB 数据库
