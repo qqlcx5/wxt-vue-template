@@ -1,7 +1,7 @@
 import { createApp } from 'vue';
 import '@unocss/reset/tailwind.css';
 import 'virtual:uno.css';
-import './style.css';
+import '@/entrypoints/popup/style.css';
 import { pinia } from '@/stores';
 import App from './App.vue';
 

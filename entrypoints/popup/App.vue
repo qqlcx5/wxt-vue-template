@@ -32,6 +32,8 @@ import {
   DialogClose,
   TooltipProvider,
 } from '@/components/ui';
+import { useSettingsStore, useArticlesStore } from '@/stores';
+import { sendToBackground } from '@/utils/messaging';
 
 // 浅色为主，支持丝滑切换深色
 const isDark = useDark({
@@ -39,16 +41,13 @@ const isDark = useDark({
 });
 const toggleDark = useToggle(isDark);
 
+const settingsStore = useSettingsStore();
+const articlesStore = useArticlesStore();
+
 // 当前导航分段
 const currentTab = ref('featured');
 
-// 控件状态
-const autoSync = ref(true);
-const extractorEnabled = ref(true);
-const notificationEnabled = ref(false);
-
 const searchInput = ref('');
-const noteText = ref('这是一个纯净精致、对齐苹果 Human Interface Guidelines 规范的 Chrome 扩展脚手架。');
 const volume = ref([65]);
 const progress = ref(78);
 
@@ -70,8 +69,50 @@ function triggerToast(msg: string, type: 'success' | 'info' | 'warning' | 'error
   }, 2200);
 }
 
+// 侧边栏与独立设置跳转
+async function openSidePanel() {
+  const sidePanelApi = (globalThis as any).chrome?.sidePanel;
+
+  // 1. 如果存在 Chrome 原生 sidePanel API，在当前直接点击事件（用户手势）上下文中直接打开（Chrome 116+ 推荐）
+  if (sidePanelApi?.open) {
+    try {
+      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+      const win = await (globalThis as any).chrome?.windows?.getLastFocused?.();
+      const targetWindowId = tab?.windowId || win?.id;
+
+      if (targetWindowId) {
+        await sidePanelApi.open({ windowId: targetWindowId });
+        window.close();
+        return;
+      }
+      if (tab?.id) {
+        await sidePanelApi.open({ tabId: tab.id });
+        window.close();
+        return;
+      }
+    } catch (err: any) {
+      console.warn('[Popup] Direct sidePanel.open failed:', err);
+    }
+  }
+
+  // 2. 兜底通过 Background Service Worker 唤醒
+  try {
+    const res = await sendToBackground('OPEN_SIDEPANEL');
+    if (res?.success) {
+      window.close();
+    } else {
+      triggerToast(res?.error || '呼出侧边栏失败，请尝试快捷键 ⌘⇧S 或在网页上右键打开', 'warning');
+    }
+  } catch (err: any) {
+    triggerToast('呼出侧边栏异常: ' + err.message, 'error');
+  }
+}
+
+async function openOptions() {
+  await sendToBackground('OPEN_OPTIONS');
+}
+
 // Select 下拉选单
-const selectedModel = ref('gpt4o');
 const modelOptions = [
   { value: 'gpt4o', label: 'GPT-4o (Omni)', icon: 'i-lucide-sparkles' },
   { value: 'claude35', label: 'Claude 3.5 Sonnet', icon: 'i-lucide-zap' },
@@ -90,9 +131,9 @@ const storageOptions = [
 const menuGroups = [
   {
     actions: [
+      { label: '在侧边栏中打开', icon: 'i-lucide-panel-right', kbd: '⌘⇧S', onSelect: openSidePanel },
+      { label: '打开系统偏好设置', icon: 'i-lucide-settings', onSelect: openOptions },
       { label: '复制快照链接', icon: 'i-lucide-copy', kbd: '⌘C', onSelect: () => triggerToast('链接已复制到剪贴板') },
-      { label: '导出为 Markdown', icon: 'i-lucide-file-text', kbd: '⌘E', onSelect: () => triggerToast('Markdown 文件导出就绪') },
-      { label: '在独立标签页打开', icon: 'i-lucide-external-link', onSelect: () => triggerToast('已在新标签页打开') },
     ],
   },
   {
@@ -145,15 +186,37 @@ function replayProgress() {
           </span>
         </div>
 
-        <!-- 右侧操作栏：明暗模式切换无边框胶囊 -->
-        <button
-          type="button"
-          class="flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-medium bg-black/[0.05] dark:bg-white/[0.1] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-black/[0.08] dark:hover:bg-white/[0.15] transition-all cursor-pointer border-0 outline-none"
-          @click="toggleDark()"
-        >
-          <i :class="isDark ? 'i-lucide-moon text-[#007AFF]' : 'i-lucide-sun text-[#FF9500]'" class="text-xs" />
-          <span>{{ isDark ? '暗黑' : '浅色' }}</span>
-        </button>
+        <!-- 右侧操作栏：侧边栏按钮 + 选项设置 + 明暗模式切换 -->
+        <div class="flex items-center gap-1.5">
+          <Tooltip content="在侧边栏中打开 (⌘⇧S)">
+            <button
+              type="button"
+              class="flex items-center justify-center h-6 w-6 rounded-full bg-black/[0.05] dark:bg-white/[0.1] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-black/[0.08] dark:hover:bg-white/[0.15] transition-all cursor-pointer border-0 outline-none"
+              @click="openSidePanel"
+            >
+              <i class="i-lucide-panel-right text-xs" />
+            </button>
+          </Tooltip>
+
+          <Tooltip content="系统偏好设置">
+            <button
+              type="button"
+              class="flex items-center justify-center h-6 w-6 rounded-full bg-black/[0.05] dark:bg-white/[0.1] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-black/[0.08] dark:hover:bg-white/[0.15] transition-all cursor-pointer border-0 outline-none"
+              @click="openOptions"
+            >
+              <i class="i-lucide-settings text-xs" />
+            </button>
+          </Tooltip>
+
+          <button
+            type="button"
+            class="flex items-center gap-1 h-6 px-2 rounded-full text-[11px] font-medium bg-black/[0.05] dark:bg-white/[0.1] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-black/[0.08] dark:hover:bg-white/[0.15] transition-all cursor-pointer border-0 outline-none"
+            @click="toggleDark()"
+          >
+            <i :class="isDark ? 'i-lucide-moon text-[#007AFF]' : 'i-lucide-sun text-[#FF9500]'" class="text-xs" />
+            <span>{{ isDark ? '暗黑' : '浅色' }}</span>
+          </button>
+        </div>
       </div>
 
       <!-- 主体内容区域 -->
@@ -170,6 +233,28 @@ function replayProgress() {
 
         <!-- ==================== TAB 1: 常用控件 (FEATURED) ==================== -->
         <div v-if="currentTab === 'featured'" class="flex flex-col gap-4 animate-in fade-in duration-150">
+          <!-- 侧边栏工作台呼出入口卡片 (重点展示) -->
+          <Card title="工作台侧边栏 (Side Panel)">
+            <div class="flex items-center justify-between py-1">
+              <div class="flex items-center gap-3">
+                <div class="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-[8px] bg-[#007AFF] text-white">
+                  <i class="i-lucide-panel-right text-base" />
+                </div>
+                <div class="flex flex-col">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[13px] font-medium leading-tight">呼出右侧长驻工作台</span>
+                    <Badge variant="primary" class="scale-85 origin-left">常驻模式</Badge>
+                  </div>
+                  <span class="text-[11px] text-[#8e8e93] leading-tight mt-0.5">支持全局快捷键 ⌘⇧S 或右键菜单</span>
+                </div>
+              </div>
+
+              <Button variant="primary" size="sm" icon="i-lucide-external-link" @click="openSidePanel">
+                立即打开
+              </Button>
+            </div>
+          </Card>
+
           <!-- 账户与快捷键卡片 (Avatar + Kbd) -->
           <Card title="用户账户与快捷键">
             <div class="flex items-center justify-between py-1">
@@ -193,8 +278,8 @@ function replayProgress() {
                 <Tooltip content="唤醒全局搜索">
                   <Kbd>⌘K</Kbd>
                 </Tooltip>
-                <Tooltip content="快速提取网页">
-                  <Kbd>⌥D</Kbd>
+                <Tooltip content="呼出侧边栏">
+                  <Kbd>⌘⇧S</Kbd>
                 </Tooltip>
               </div>
             </div>
@@ -215,8 +300,8 @@ function replayProgress() {
             </div>
           </Card>
 
-          <!-- iOS 设置分组卡片 (Grouped Inset List) -->
-          <Card title="系统偏好设置">
+          <!-- iOS 设置分组卡片 (Grouped Inset List) 绑定 Pinia 全局状态 -->
+          <Card title="系统偏好设置 (Pinia 持久化)">
             <div class="flex flex-col">
               <!-- Row 1: 云端同步 -->
               <div class="flex items-center justify-between py-1.5">
@@ -229,7 +314,7 @@ function replayProgress() {
                     <span class="text-[11px] text-[#8e8e93] leading-tight mt-0.5">跨端多设备实时数据同步</span>
                   </div>
                 </div>
-                <Switch v-model:checked="autoSync" />
+                <Switch v-model:checked="settingsStore.autoSync" />
               </div>
 
               <!-- Inset Divider -->
@@ -246,7 +331,7 @@ function replayProgress() {
                     <span class="text-[11px] text-[#8e8e93] leading-tight mt-0.5">自动过滤网页广告与杂讯</span>
                   </div>
                 </div>
-                <Switch v-model:checked="extractorEnabled" />
+                <Switch v-model:checked="settingsStore.extractorEnabled" />
               </div>
 
               <!-- Inset Divider -->
@@ -263,7 +348,7 @@ function replayProgress() {
                     <span class="text-[11px] text-[#8e8e93] leading-tight mt-0.5">任务执行完毕后发出系统提醒</span>
                   </div>
                 </div>
-                <Switch v-model:checked="notificationEnabled" />
+                <Switch v-model:checked="settingsStore.notificationEnabled" />
               </div>
             </div>
           </Card>
@@ -321,7 +406,7 @@ function replayProgress() {
 
         <!-- ==================== TAB 2: 表单与输入 (FORMS) ==================== -->
         <div v-if="currentTab === 'forms'" class="flex flex-col gap-4 animate-in fade-in duration-150">
-          <Card title="文本搜索与输入">
+          <Card title="文本搜索与持久化便笺">
             <div class="flex flex-col gap-2.5 py-0.5">
               <Input
                 v-model="searchInput"
@@ -330,8 +415,8 @@ function replayProgress() {
                 clearable
               />
               <Textarea
-                v-model="noteText"
-                placeholder="在此记录速记或随想..."
+                v-model="settingsStore.memoNote"
+                placeholder="在此记录速记或随想，跨端实时同步..."
                 :rows="3"
               />
             </div>
@@ -340,9 +425,9 @@ function replayProgress() {
           <!-- 下拉选择器 (Select) -->
           <Card title="下拉列表选择器 (Select)">
             <div class="flex flex-col gap-2 py-0.5">
-              <label class="text-[12px] text-[#6c6c70] dark:text-[#8e8e93]">默认智能分析模型</label>
+              <label class="text-[12px] text-[#6c6c70] dark:text-[#8e8e93]">默认智能分析模型 (Pinia 状态持久化)</label>
               <Select
-                v-model="selectedModel"
+                v-model="settingsStore.selectedModel"
                 :options="modelOptions"
                 placeholder="选择语言模型..."
               />
@@ -478,15 +563,15 @@ function replayProgress() {
               v-else
               icon="i-lucide-folder-search"
               title="暂无保存的网页快照"
-              description="点击浏览器工具栏图标或快捷键 ⌥D 立即捕获当前页面的纯净 Markdown 正文"
+              description="点击浏览器工具栏图标或快捷键 ⌘⇧S 开启侧边栏并立即捕获当前页面的纯净 Markdown 正文"
             >
               <Button
                 variant="primary"
                 size="sm"
-                icon="i-lucide-plus"
-                @click="triggerToast('已开始提取当前活跃标签页...', 'info')"
+                icon="i-lucide-panel-right"
+                @click="openSidePanel"
               >
-                立即提取当前页
+                在侧边栏中开启
               </Button>
             </Empty>
           </Card>

@@ -16,6 +16,28 @@ export interface ExtensionMessages {
     request: { url?: string };
     response: { success: boolean; data?: any; error?: string };
   };
+  OPEN_SIDEPANEL: {
+    request: void;
+    response: { success: boolean; error?: string };
+  };
+  OPEN_OPTIONS: {
+    request: void;
+    response: { success: boolean; error?: string };
+  };
+  SET_BADGE: {
+    request: { text: string; color?: string };
+    response: { success: boolean };
+  };
+  SAVE_ARTICLE: {
+    request: {
+      url: string;
+      title: string;
+      content: string;
+      author?: string;
+      tags?: string[];
+    };
+    response: { success: boolean; id?: number; error?: string };
+  };
 }
 
 export type MessageKey = keyof ExtensionMessages;

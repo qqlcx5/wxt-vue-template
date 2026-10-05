@@ -1,6 +1,6 @@
 # WXT 浏览器扩展核心架构与 API 指南
 
-本项目基于 [WXT (Web Extension Toolbox)](https://wxt.dev) 构建，严格遵循 Chrome Manifest V3 (MV3) 规范。
+本项目基于 [WXT (Web Extension Toolbox)](https://wxt.dev) 构建，严格遵循 Chrome Manifest V3 (MV3) 规范，并具备全套 **Popup + Side Panel + Options + Content Script + Background** 五重扩展形态。
 
 日常开发扩展无需反复翻查 Chrome 官方英文文档，核心机制与代码模板已汇总于本指南。
 
@@ -8,30 +8,75 @@
 
 ## 目录
 1. [扩展入口点结构 (Entrypoints)](#1-扩展入口点结构-entrypoints)
-2. [跨上下文响应式存储 (Storage API)](#2-跨上下文响应式存储-storage-api)
-3. [端到端强类型通信 (Messaging API)](#3-端到端强类型通信-messaging-api)
-4. [Content Script 与 Shadow DOM 样式隔离](#4-content-script-与-shadow-dom-样式隔离)
-5. [Pinia 持久化与 MV3 安全规范](#5-pinia-持久化与-mv3-安全规范)
-6. [数据与服务层使用 (Dexie + Defuddle)](#6-数据与服务层使用-dexie--defuddle)
-7. [新增 Options 页面与 Sidepanel 侧边栏](#7-新增-options-页面与-sidepanel-侧边栏)
+2. [全功能响应式状态层 (Pinia Stores)](#2-全功能响应式状态层-pinia-stores)
+3. [跨上下文响应式存储 (Storage API)](#3-跨上下文响应式存储-storage-api)
+4. [端到端强类型通信 (Messaging API)](#4-端到端强类型通信-messaging-api)
+5. [后台服务中枢 (Context Menus, Commands, Alarms)](#5-后台服务中枢-context-menus-commands-alarms)
+6. [Side Panel 侧边栏与 Options 独立设置页](#6-side-panel-侧边栏与-options-独立设置页)
+7. [Content Script 与 Shadow DOM 样式隔离](#7-content-script-与-shadow-dom-样式隔离)
+8. [本地数据库与全文检索 (Dexie + MiniSearch)](#8-本地数据库与全文检索-dexie--minisearch)
 
 ---
 
 ## 1. 扩展入口点结构 (Entrypoints)
 
-WXT 使用基于约定的文件路由，放置在 `entrypoints/` 目录下即可自动识别：
+WXT 使用基于约定的文件路由，全部位于 `entrypoints/` 目录下：
 
-| 文件 / 目录路径 | 对应扩展能力 | 运行环境 |
+| 文件 / 目录路径 | 对应扩展能力 | 运行环境与特性 |
 | :--- | :--- | :--- |
-| `entrypoints/popup/` | 扩展弹出窗口 (Popup) | 临时 DOM 窗口，点击图标展开，移开即销毁 |
-| `entrypoints/background.ts` | 后台服务工作者 (Service Worker) | 无 DOM、事件驱动、自动休眠/唤醒 |
-| `entrypoints/content.ts` | 内容脚本 (Content Script) | 注入目标网页的上下文中执行 |
-| `entrypoints/options/` *(可选)* | 扩展完整配置页 | 独立全屏或嵌入设置标签页 |
-| `entrypoints/sidepanel/` *(可选)* | 浏览器原生右侧边栏 | 长期停靠侧边栏 (Chrome 114+) |
+| `entrypoints/popup/` | 扩展弹出窗口 (Popup) | 临时 DOM 窗口，点击图标展开，移开即销毁。适合高频快速预览与控制 |
+| `entrypoints/sidepanel/` | 浏览器原生右侧边栏 | 长期停靠侧边栏 (Chrome 114+)。适合查资料、写便笺、多任务常驻 |
+| `entrypoints/options/` | 扩展偏好设置管理后台 | 独立大屏控制台，macOS 系统设置风格。适合数据导入导出、API Key 维护 |
+| `entrypoints/background.ts` | 后台服务工作者 (Service Worker) | 无 DOM、事件驱动、自动休眠/唤醒。负责右键菜单、快捷键与定时任务 |
+| `entrypoints/content.ts` | 内容脚本 (Content Script) | 注入目标网页上下文中执行，以 Shadow DOM 挂载浮动工具球与悬浮面板 |
 
 ---
 
-## 2. 跨上下文响应式存储 (Storage API)
+## 2. 全功能响应式状态层 (Pinia Stores)
+
+脚手架在 `stores/` 目录下提供了完整的状态管理架构，跨 Popup、SidePanel、Options 响应式即时同步：
+
+### `useSettingsStore` (`stores/settings.ts`)
+持久化保存扩展的全局配置：
+- `theme`: 明暗模式切换 (`'light' | 'dark' | 'auto'`)
+- `autoSync`: 云端自动备份开关
+- `extractorEnabled`: 网页正文清洗开关
+- `notificationEnabled`: 系统桌面通知开关
+- `showBadge`: 图标状态角标开关
+- `selectedModel`: 默认推理模型（如 `'gpt4o'`, `'claude35'`, `'deepseek'`）
+- `memoNote`: 随手速记便笺内容（跨端双向自动同步）
+- `openaiKey`, `deepseekKey`, `customEndpoint`: AI 访问凭证
+
+### `useArticlesStore` (`stores/articles.ts`)
+与本地 IndexedDB (Dexie) 绑定的响应式文章库：
+```typescript
+import { useArticlesStore } from '@/stores';
+
+const articlesStore = useArticlesStore();
+
+// 1. 加载全部文章
+await articlesStore.loadArticles();
+
+// 2. 添加抓取快照
+await articlesStore.addArticle({
+  url: 'https://example.com',
+  title: '文章标题',
+  content: '## 正文内容...',
+  tags: ['网页提取'],
+  createdAt: Date.now(),
+});
+
+// 3. 搜索与过滤
+articlesStore.searchQuery = 'Vue 3';
+console.log(articlesStore.filteredArticles);
+
+// 4. 导出 JSON 备份
+const json = await articlesStore.exportJSON();
+```
+
+---
+
+## 3. 跨上下文响应式存储 (Storage API)
 
 ### 为什么不用 `localStorage`？
 - Chrome MV3 的 Service Worker (Background) 中**完全没有 `localStorage` API**。
@@ -42,65 +87,87 @@ WXT 使用基于约定的文件路由，放置在 `entrypoints/` 目录下即可
 ```typescript
 import { storage } from 'wxt/utils/storage';
 
-// 1. 定义强类型存储项（默认存储于 chrome.storage.local）
 export const userConfigStorage = storage.defineItem<{ apiKey: string; autoSync: boolean }>('local:userConfig', {
   defaultValue: { apiKey: '', autoSync: false },
 });
 
-// 2. 在任何环境读取
+// 读取
 const config = await userConfigStorage.getValue();
-
-// 3. 写入值（会自动通知所有正在监听的页面）
+// 写入
 await userConfigStorage.setValue({ apiKey: 'sk-123456', autoSync: true });
-
-// 4. 监听变化（Popup, Background, Content 均可响应式收到更新）
-const unwatch = userConfigStorage.watch((newVal, oldVal) => {
-  console.log('配置已更新:', newVal);
-});
+// 监听变化
+userConfigStorage.watch((newVal) => console.log('更新:', newVal));
 ```
 
 ---
 
-## 3. 端到端强类型通信 (Messaging API)
+## 4. 端到端强类型通信 (Messaging API)
 
-本项目在 `utils/messaging.ts` 中封装了端到端类型安全的消息通信。
+在 `utils/messaging.ts` 中封装了端到端类型安全的消息通信。
 
-### 1. 注册消息类型
-编辑 `utils/messaging.ts`：
+### 消息协议定义
+- `GET_CURRENT_TAB`: 获取当前活跃标签页的 ID、URL、Title
+- `PING`: 心跳检测
+- `OPEN_SIDEPANEL`: 编程呼出右侧边栏
+- `OPEN_OPTIONS`: 编程打开全屏偏好设置页
+- `SET_BADGE`: 动态更新浏览器图标角标文字与底色
+- `SAVE_ARTICLE`: 向后台提交离线文章存储请求
+
+### 发起调用
 ```typescript
-export interface ExtensionMessages {
-  GET_PAGE_DATA: {
-    request: { tabId: number };
-    response: { title: string; wordCount: number };
-  };
-}
-```
-
-### 2. 在 Background 中监听
-```typescript
-// entrypoints/background.ts
-import { onExtensionMessage } from '@/utils/messaging';
-
-export default defineBackground(() => {
-  onExtensionMessage('GET_PAGE_DATA', async (data) => {
-    // 异步处理并返回数据
-    return { title: '目标标题', wordCount: 1200 };
-  });
-});
-```
-
-### 3. 在 Popup 或任何地方发起调用
-```typescript
-// entrypoints/popup/App.vue
 import { sendToBackground } from '@/utils/messaging';
 
-const res = await sendToBackground('GET_PAGE_DATA', { tabId: 101 });
-console.log(res.title, res.wordCount);
+// 呼出侧边栏
+await sendToBackground('OPEN_SIDEPANEL');
+
+// 打开偏好设置
+await sendToBackground('OPEN_OPTIONS');
+
+// 设置角标
+await sendToBackground('SET_BADGE', { text: '12', color: '#007AFF' });
 ```
 
 ---
 
-## 4. Content Script 与 Shadow DOM 样式隔离
+## 5. 后台服务中枢 (Context Menus, Commands, Alarms)
+
+全部集中于 `entrypoints/background.ts` 调度：
+
+### 1. 右键菜单 (Context Menus)
+- *在侧边栏中打开工作台*：自动获取当前 Window 并呼出 Sidepanel。
+- *提取当前网页纯净正文*：自动捕获并存入 Dexie 离线库，绿标闪烁。
+- *打开系统偏好设置*：唤起 Options 面板。
+
+### 2. 快捷键系统 (Commands)
+在 `wxt.config.ts` 中预设，可在 `chrome://extensions/shortcuts` 中由用户自由修改：
+- `⌘⇧Y` / `Ctrl+Shift+Y`: 快速激活 Popup 弹窗。
+- `⌘⇧S` / `Ctrl+Shift+S`: 全局呼出右侧边栏。
+- `⌘⇧E` / `Ctrl+Shift+E`: 静默提取当前标签页正文。
+
+### 3. 安全定时任务 (Alarms)
+Service Worker 在 30 秒无操作后会自动休眠，脚手架通过 `browser.alarms` 实现可靠后台心跳，杜绝 `setInterval` 丢失。
+
+---
+
+## 6. Side Panel 侧边栏与 Options 独立设置页
+
+### 侧边栏 (`entrypoints/sidepanel/`)
+- 包含 3 大核心功能卡片：
+  1. **速记便笺**：实时双向持久化，字数统计与一键复制。
+  2. **网页提取**：一键捕获当前标签页 URL 与正文纯净快照。
+  3. **离线文库**：即时搜索、删除与标签展示。
+
+### 独立设置页 (`entrypoints/options/`)
+- macOS 系统偏好设置分栏布局：
+  - **通用偏好**：深色模式、角标开关、自动清洗。
+  - **系统快捷键**：指令清单与一键跳转 Chrome 快捷键设置面板。
+  - **数据与存储**：冷备份导出 JSON、从 JSON 文件批量恢复、清空本地库（带二次确认）。
+  - **AI 模型引擎**：选择首选大模型、配置 OpenAI / DeepSeek API Key 与中转 URL。
+  - **关于扩展**：脚手架版本与技术架构说明。
+
+---
+
+## 7. Content Script 与 Shadow DOM 样式隔离
 
 向宿主页面注入 UI 时，务必采用 Shadow DOM 挂载以杜绝样式互染。
 
@@ -112,10 +179,10 @@ import 'virtual:uno.css';
 
 export default defineContentScript({
   matches: ['*://*.google.com/*'],
-  cssInjectionMode: 'ui', // 由 WXT 自动打包 UnoCSS 样式并注入 Shadow Root
+  cssInjectionMode: 'ui',
   async main(ctx) {
     const ui = await createShadowRootUi(ctx, {
-      name: 'my-shadow-ui',
+      name: 'wxt-shadow-ui',
       position: 'inline',
       anchor: 'body',
       append: 'last',
@@ -136,35 +203,12 @@ export default defineContentScript({
 
 ---
 
-## 5. Pinia 持久化与 MV3 安全规范
-
-若您在项目中习惯使用 Pinia 全局状态管理，请配置我们提供的 `extensionPiniaStorage` 适配器：
-
-```typescript
-import { defineStore } from 'pinia';
-import { extensionPiniaStorage } from '@/utils/storage';
-
-export const useAppStore = defineStore('app', {
-  state: () => ({
-    token: '',
-    bookmarks: [],
-  }),
-  persist: {
-    storage: extensionPiniaStorage, // 安全桥接到 browser.storage.local
-  },
-});
-```
-
----
-
-## 6. 数据与服务层使用 (Dexie + Defuddle)
+## 8. 本地数据库与全文检索 (Dexie + MiniSearch)
 
 ### 1. IndexedDB 存储 (`services/db.ts`)
-适合存储大量离线数据、历史文章或用户标记：
 ```typescript
 import { db } from '@/services/db';
 
-// 插入数据
 await db.articles.add({
   url: 'https://example.com/post',
   title: '文章标题',
@@ -172,54 +216,14 @@ await db.articles.add({
   createdAt: Date.now(),
   tags: ['前端', 'Vue'],
 });
-
-// 查询数据
-const allArticles = await db.articles.orderBy('createdAt').reverse().toArray();
 ```
 
 ### 2. 网页正文提取与检索 (`services/extractor.ts`)
 ```typescript
 import { extractWebContent, createSearchIndex } from '@/services/extractor';
 
-// 1. 抓取正文（自动剔除广告、导航条并清洗 HTML）
 const article = await extractWebContent(document);
-console.log(article.title, article.wordCount);
-
-// 2. 建立本地全文索引
 const searchIndex = createSearchIndex();
 searchIndex.add({ id: 1, title: article.title, content: article.content });
-
-// 3. 搜索匹配
 const results = searchIndex.search('Vue 3');
 ```
-
----
-
-## 7. 新增 Options 页面与 Sidepanel 侧边栏
-
-若后续功能扩展需要更多入口，只需在 `entrypoints/` 下新建对应文件夹：
-
-### 新增 Options 设置页
-1. 创建目录 `entrypoints/options/`
-2. 新建 `index.html`:
-   ```html
-   <!DOCTYPE html>
-   <html>
-     <body>
-       <div id="app"></div>
-       <script type="module" src="./main.ts"></script>
-     </body>
-   </html>
-   ```
-3. 新建 `main.ts` 与 `App.vue`，即可拥有独立的扩展设置面板。
-
-### 新增 Sidepanel 侧边栏 (Chrome 114+)
-1. 创建目录 `entrypoints/sidepanel/`
-2. 新建 `index.html`、`main.ts` 与 `App.vue`
-3. 在 `wxt.config.ts` 中声明权限：
-   ```typescript
-   manifest: {
-     permissions: ['storage', 'sidePanel'],
-   }
-   ```
-WXT 会自动在编译时输出合规的 Chrome MV3 侧边栏配置。
