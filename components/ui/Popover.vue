@@ -30,7 +30,7 @@ withDefaults(defineProps<Props>(), {
         :side="side"
         :side-offset="sideOffset"
         :align="align"
-        :class="cn('z-50 w-72 rounded-xl bg-zinc-800 p-4 text-white border border-white/10 shadow-xl backdrop-blur-md focus:outline-none animate-in fade-in zoom-in-95', $props.class)"
+        :class="cn('z-50 w-72 rounded-2xl bg-white/95 dark:bg-zinc-850/95 p-4 text-neutral-900 dark:text-neutral-100 border border-black/10 dark:border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.12)] backdrop-blur-xl focus:outline-none animate-in fade-in zoom-in-95', $props.class)"
       >
         <slot />
       </PopoverContent>

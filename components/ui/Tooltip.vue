@@ -29,7 +29,7 @@ withDefaults(defineProps<Props>(), {
       <TooltipContent
         :side="side"
         :side-offset="sideOffset"
-        :class="cn('z-50 overflow-hidden rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-white border border-white/10 shadow-lg backdrop-blur-sm', $props.class)"
+        :class="cn('z-50 overflow-hidden rounded-lg bg-neutral-900/90 dark:bg-zinc-800/90 px-2.5 py-1 text-xs font-medium text-white shadow-md backdrop-blur-md border border-white/10 select-none animate-in fade-in zoom-in-95', $props.class)"
       >
         <slot name="content">{{ content }}</slot>
       </TooltipContent>

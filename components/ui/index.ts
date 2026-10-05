@@ -11,6 +11,7 @@ export { default as Progress } from './Progress.vue';
 export { default as Tooltip } from './Tooltip.vue';
 export { default as Popover } from './Popover.vue';
 export { default as AccordionItem } from './AccordionItem.vue';
+export { default as SegmentedControl } from './SegmentedControl.vue';
 
 // 常用 Reka UI 原语透传
 export {

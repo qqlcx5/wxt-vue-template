@@ -5,22 +5,33 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/utils/cn';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:pointer-events-none disabled:opacity-50 cursor-pointer select-none active:scale-[0.98]',
+  'inline-flex items-center justify-center gap-1.5 whitespace-nowrap text-[13px] font-medium transition-all duration-150 border-0 outline-none select-none cursor-pointer disabled:pointer-events-none disabled:opacity-40 active:scale-[0.97]',
   {
     variants: {
       variant: {
-        default: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30',
-        destructive: 'bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30',
-        outline: 'border border-white/20 bg-transparent text-white/80 hover:bg-white/10 hover:text-white',
-        secondary: 'bg-white/10 text-white/90 hover:bg-white/15 border border-white/10',
-        ghost: 'text-white/70 hover:bg-white/10 hover:text-white',
-        link: 'text-emerald-400 underline-offset-4 hover:underline',
+        // Apple 经典实色主要按钮 (Blue Filled) - 纯净无描边
+        default: 'bg-[#007AFF] text-white hover:bg-[#0071E3] active:bg-[#0062CC] rounded-full',
+        primary: 'bg-[#007AFF] text-white hover:bg-[#0071E3] active:bg-[#0062CC] rounded-full',
+        // Apple 灰底彩色文字次要按钮 (Tinted Secondary)
+        secondary: 'bg-[#000000]/[0.06] dark:bg-[#FFFFFF]/[0.1] text-[#007AFF] dark:text-[#0A84FF] hover:bg-[#000000]/[0.09] dark:hover:bg-[#FFFFFF]/[0.15] rounded-full',
+        // Apple 灰底深色文字轻量按钮
+        neutral: 'bg-[#000000]/[0.06] dark:bg-[#FFFFFF]/[0.1] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-[#000000]/[0.09] dark:hover:bg-[#FFFFFF]/[0.15] rounded-full',
+        // Apple 绿色成功按钮
+        success: 'bg-[#34C759] text-white hover:bg-[#28A745] active:bg-[#218838] rounded-full',
+        // Apple 红色警示按钮 (浅底红字)
+        destructive: 'bg-[#FF3B30]/12 text-[#FF3B30] hover:bg-[#FF3B30]/20 dark:bg-[#FF453A]/20 dark:text-[#FF453A] rounded-full',
+        // Apple 极细半透边框线框按钮
+        outline: 'border border-[#007AFF]/30 text-[#007AFF] hover:bg-[#007AFF]/6 bg-transparent rounded-full',
+        // Apple 幽灵纯文本按钮
+        ghost: 'text-[#007AFF] hover:bg-[#007AFF]/8 active:bg-[#007AFF]/12 rounded-full',
+        link: 'text-[#007AFF] underline-offset-4 hover:underline p-0 h-auto',
       },
       size: {
-        default: 'h-9 px-4 py-2',
-        sm: 'h-8 rounded-md px-3 text-xs',
-        lg: 'h-10 rounded-lg px-6',
-        icon: 'h-9 w-9 p-0',
+        default: 'h-[32px] px-3.5',
+        sm: 'h-[26px] px-2.5 text-[12px]',
+        lg: 'h-[40px] px-5 text-[15px]',
+        icon: 'h-[30px] w-[30px] p-0 rounded-full',
+        'icon-sm': 'h-[24px] w-[24px] p-0 rounded-full text-[11px]',
       },
     },
     defaultVariants: {
@@ -37,6 +48,7 @@ interface Props extends /* @vue-ignore */ PrimitiveProps {
   size?: ButtonVariants['size'];
   class?: HTMLAttributes['class'];
   as?: string;
+  icon?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -52,6 +64,7 @@ const classes = computed(() =>
 
 <template>
   <Primitive :as="as" :as-child="asChild" :class="classes">
+    <i v-if="icon" :class="icon" class="text-sm shrink-0" />
     <slot />
   </Primitive>
 </template>

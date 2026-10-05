@@ -10,6 +10,8 @@ interface Props {
   type?: string;
   placeholder?: string;
   disabled?: boolean;
+  icon?: string;
+  clearable?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -25,14 +27,40 @@ const modelValue = useVModel(props, 'modelValue', emits, {
   defaultValue: props.defaultValue,
 });
 
-const inputClasses = computed(() =>
-  cn(
-    'flex h-9 w-full rounded-lg border border-white/15 bg-zinc-800/60 px-3 py-1 text-sm text-white shadow-xs transition-colors placeholder:text-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 focus-visible:border-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-50',
-    props.class,
-  ),
-);
+function handleClear() {
+  modelValue.value = '';
+}
 </script>
 
 <template>
-  <input v-model="modelValue" :type="type" :placeholder="placeholder" :disabled="disabled" :class="inputClasses" />
+  <div
+    class="relative flex items-center w-full rounded-xl transition-all duration-200 border border-black/[0.08] dark:border-white/[0.08] bg-black/[0.04] dark:bg-white/[0.07] focus-within:bg-white dark:focus-within:bg-zinc-900 focus-within:border-apple-blue focus-within:ring-3 focus-within:ring-apple-blue/20"
+    :class="[disabled ? 'opacity-50 pointer-events-none' : '', $props.class]"
+  >
+    <!-- 前置图标 -->
+    <div v-if="icon || $slots.icon" class="pl-3 flex items-center justify-center text-neutral-400 dark:text-neutral-500 pointer-events-none">
+      <slot name="icon">
+        <i :class="icon" class="text-sm" />
+      </slot>
+    </div>
+
+    <!-- 真实输入框 -->
+    <input
+      v-model="modelValue"
+      :type="type"
+      :placeholder="placeholder"
+      :disabled="disabled"
+      class="w-full h-9 bg-transparent px-3 py-1.5 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none"
+    />
+
+    <!-- 清空按钮 -->
+    <button
+      v-if="clearable && modelValue"
+      type="button"
+      class="pr-2.5 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors cursor-pointer"
+      @click="handleClear"
+    >
+      <i class="i-lucide-x-circle text-sm" />
+    </button>
+  </div>
 </template>

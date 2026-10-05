@@ -20,7 +20,7 @@ const forwarded = useForwardPropsEmits(props, emits);
 
 const rootClasses = computed(() =>
   cn(
-    'peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-white/15',
+    'peer inline-flex h-[26px] w-[44px] shrink-0 cursor-pointer items-center rounded-full p-[2px] transition-colors duration-200 border-0 outline-none select-none disabled:cursor-not-allowed disabled:opacity-40 data-[state=checked]:bg-[#34C759] data-[state=unchecked]:bg-[#E9E9EA] dark:data-[state=unchecked]:bg-[#39393D]',
     props.class,
   ),
 );
@@ -29,7 +29,7 @@ const rootClasses = computed(() =>
 <template>
   <SwitchRoot v-bind="forwarded" :class="rootClasses">
     <SwitchThumb
-      class="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-0"
+      class="pointer-events-none block h-[22px] w-[22px] rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.2),0_0_1px_rgba(0,0,0,0.1)] ring-0 transition-transform duration-200 data-[state=checked]:translate-x-[18px] data-[state=unchecked]:translate-x-0"
     />
   </SwitchRoot>
 </template>

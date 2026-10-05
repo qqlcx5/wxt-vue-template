@@ -21,7 +21,7 @@ const forwarded = useForwardPropsEmits(props, emits);
 
 const contentClasses = computed(() =>
   cn(
-    'fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-zinc-800 p-6 border border-white/10 shadow-2xl duration-200 focus:outline-none',
+    'fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white/95 dark:bg-zinc-850/95 p-6 border border-black/10 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.2)] backdrop-blur-2xl text-neutral-900 dark:text-neutral-100 duration-200 focus:outline-none animate-in fade-in zoom-in-95',
     props.class,
   ),
 );
@@ -30,7 +30,7 @@ const contentClasses = computed(() =>
 <template>
   <DialogPortal>
     <DialogOverlay
-      class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs transition-opacity"
+      class="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs transition-opacity duration-200"
     />
     <DialogContent v-bind="forwarded" :class="contentClasses">
       <slot />
