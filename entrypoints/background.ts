@@ -86,6 +86,12 @@ export default defineBackground(() => {
     });
 
     browser.contextMenus.create({
+      id: 'open-chat',
+      title: '打开全屏 AI 智能助手 (Studio)',
+      contexts: ['all'],
+    });
+
+    browser.contextMenus.create({
       id: 'open-options',
       title: '打开系统偏好设置',
       contexts: ['action'],
@@ -101,6 +107,8 @@ export default defineBackground(() => {
   browser.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId === 'open-sidepanel') {
       await openSidePanelSafe(tab?.windowId, tab?.id);
+    } else if (info.menuItemId === 'open-chat') {
+      await browser.tabs.create({ url: browser.runtime.getURL('/chat.html') });
     } else if (info.menuItemId === 'open-options') {
       await browser.runtime.openOptionsPage();
     } else if (info.menuItemId === 'extract-page') {
@@ -215,6 +223,25 @@ export default defineBackground(() => {
         tags: data.tags || ['通用'],
       });
       return { success: true, id };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  onExtensionMessage('CAPTURE_SCREENSHOT', async () => {
+    try {
+      const dataUrl = await browser.tabs.captureVisibleTab(undefined as any, { format: 'png' });
+      return { success: true, dataUrl };
+    } catch (err: any) {
+      console.error('[Background] Failed to capture visible tab:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  onExtensionMessage('OPEN_CHAT', async () => {
+    try {
+      await browser.tabs.create({ url: browser.runtime.getURL('/chat.html') });
+      return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
     }

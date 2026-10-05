@@ -5,6 +5,8 @@ import {
   Button,
   Card,
   Input,
+  Textarea,
+  Slider,
   Switch,
   Select,
   Badge,
@@ -19,6 +21,7 @@ import {
   TooltipProvider,
 } from '@/components/ui';
 import { useSettingsStore, useArticlesStore } from '@/stores';
+import { testAiConnection } from '@/services/ai';
 
 const isDark = useDark({ initialValue: 'light' });
 const toggleDark = useToggle(isDark);
@@ -52,10 +55,12 @@ const navItems = [
 
 // AI 模型选项
 const aiModelOptions = [
-  { value: 'gpt4o', label: 'GPT-4o (Omni)', icon: 'i-lucide-sparkles' },
-  { value: 'claude35', label: 'Claude 3.5 Sonnet', icon: 'i-lucide-zap' },
-  { value: 'gemini15', label: 'Gemini 1.5 Pro', icon: 'i-lucide-bot' },
+  { value: 'gpt-6.1-sol', label: 'gpt-6.1-sol (当前专属推理通道)', icon: 'i-lucide-sparkles' },
+  { value: 'gpt4o', label: 'gpt-6.1-sol (Omni)', icon: 'i-lucide-zap' },
+  { value: 'claude35', label: 'Claude 3.5 Sonnet', icon: 'i-lucide-bot' },
   { value: 'deepseek', label: 'DeepSeek-V3', icon: 'i-lucide-cpu' },
+  { value: 'gemini15', label: 'Gemini 1.5 Pro', icon: 'i-lucide-layers' },
+  { value: 'ollama', label: 'Ollama 本地离线模型', icon: 'i-lucide-hard-drive' },
 ];
 
 // 快捷键列表
@@ -91,6 +96,36 @@ async function openSidePanelTest() {
 
 function openBrowserShortcuts() {
   window.open('chrome://extensions/shortcuts', '_blank');
+}
+
+const testingConnection = ref(false);
+const testResult = ref<{ success: boolean; latencyMs: number; reply?: string; error?: string } | null>(null);
+
+async function handleTestAiConnection() {
+  testingConnection.value = true;
+  testResult.value = null;
+  try {
+    const res = await testAiConnection(
+      settingsStore.selectedModel,
+      settingsStore.openaiKey,
+      settingsStore.customEndpoint,
+    );
+    testResult.value = res;
+    if (res.success) {
+      triggerToast(`连通测试通过！延迟 ${res.latencyMs}ms`, 'success');
+    } else {
+      triggerToast(`连接测试未通过: ${res.error}`, 'error');
+    }
+  } catch (err: any) {
+    testResult.value = { success: false, latencyMs: 0, error: err.message };
+    triggerToast(`请求异常: ${err.message}`, 'error');
+  } finally {
+    testingConnection.value = false;
+  }
+}
+
+async function openChatStudio() {
+  await sendToBackground('OPEN_CHAT');
 }
 
 // 导出 JSON
@@ -383,22 +418,28 @@ onMounted(() => {
 
         <!-- ================= SECTION 4: AI 模型与密钥 ================= -->
         <div v-if="activeSection === 'ai'" class="flex flex-col gap-5 animate-in fade-in duration-150">
-          <div>
-            <h2 class="text-xl font-bold tracking-tight">AI 模型引擎</h2>
-            <p class="text-xs text-neutral-500 mt-1">配置智能总结与网页语义理解大语言模型</p>
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-bold tracking-tight">AI 模型引擎与工作台</h2>
+              <p class="text-xs text-neutral-500 mt-1">配置智能推理大语言模型、中转 Endpoint 与系统角色提示词</p>
+            </div>
+
+            <Button variant="primary" size="sm" icon="i-lucide-external-link" @click="openChatStudio">
+              进入独立全屏 AI 工作台
+            </Button>
           </div>
 
-          <Card title="默认分析模型">
+          <Card title="默认推理模型">
             <div class="flex flex-col gap-2 py-1">
-              <label class="text-[12px] text-neutral-500">选择当前优先启用的推理引擎</label>
+              <label class="text-[12px] text-neutral-500">选择当前优先启用的推理引擎（已针对 gpt-6.1-sol 深度适配）</label>
               <Select v-model="settingsStore.selectedModel" :options="aiModelOptions" />
             </div>
           </Card>
 
-          <Card title="API 访问密钥 (严格加密保存在本地 Storage)">
+          <Card title="API 访问凭证与中转代理 (严格加密保存在本地 Storage)">
             <div class="flex flex-col gap-3 py-1">
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-medium">OpenAI API Key</label>
+                <label class="text-xs font-medium">OpenAI / 兼容接口 API Key</label>
                 <Input
                   v-model="settingsStore.openaiKey"
                   type="password"
@@ -409,7 +450,20 @@ onMounted(() => {
               </div>
 
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-medium">DeepSeek API Key</label>
+                <label class="text-xs font-medium">自定义中转 API Base URL</label>
+                <Input
+                  v-model="settingsStore.customEndpoint"
+                  placeholder="http://66.154.117.189:3000/v1"
+                  icon="i-lucide-globe"
+                  clearable
+                />
+                <span class="text-[11px] text-neutral-400">支持直连或内网/中转代理服务</span>
+              </div>
+
+              <div class="border-b border-black/[0.05] dark:border-white/[0.06] my-1" />
+
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium">备用 DeepSeek 官方 API Key (可选)</label>
                 <Input
                   v-model="settingsStore.deepseekKey"
                   type="password"
@@ -418,27 +472,92 @@ onMounted(() => {
                   clearable
                 />
               </div>
+            </div>
+          </Card>
+
+          <Card title="推理参数微调与系统角色设定">
+            <div class="flex flex-col gap-3.5 py-1">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium">系统角色设定 (System Prompt)</label>
+                <Textarea
+                  v-model="settingsStore.systemPrompt"
+                  placeholder="设定 AI 回答风格与预设角色..."
+                  :rows="3"
+                />
+              </div>
 
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-medium">自定义中转 Endpoint (可选)</label>
-                <Input
-                  v-model="settingsStore.customEndpoint"
-                  placeholder="https://api.openai.com/v1"
-                  icon="i-lucide-globe"
-                  clearable
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-neutral-500 font-medium">采样温度 (Temperature): {{ settingsStore.temperature }}</span>
+                  <span class="text-[11px] text-neutral-400">更低更精准 / 更高更有创造力</span>
+                </div>
+                <Slider
+                  :model-value="[Math.round(settingsStore.temperature * 100)]"
+                  :max="100"
+                  accent="blue"
+                  @update:model-value="(val) => { if (val?.[0] !== undefined) settingsStore.temperature = val[0] / 100; }"
                 />
               </div>
             </div>
           </Card>
 
-          <Button
-            variant="primary"
-            icon="i-lucide-save"
-            class="self-start"
-            @click="triggerToast('AI 引擎配置已成功保存！', 'success')"
-          >
-            保存配置
-          </Button>
+          <Card title="连通性诊断与实时测试">
+            <div class="flex flex-col gap-2.5 py-1">
+              <div class="flex items-center justify-between">
+                <div class="flex flex-col">
+                  <span class="text-[13px] font-medium">当前配置健康度自检</span>
+                  <span class="text-[11px] text-neutral-400 mt-0.5">向当前配置的 Endpoint 发送握手 Ping 测速</span>
+                </div>
+
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  :disabled="testingConnection"
+                  icon="i-lucide-activity"
+                  @click="handleTestAiConnection"
+                >
+                  {{ testingConnection ? '正在测速...' : '测试 API 连通性' }}
+                </Button>
+              </div>
+
+              <div
+                v-if="testResult"
+                class="mt-1 p-3 rounded-xl border text-xs flex flex-col gap-1"
+                :class="testResult.success ? 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-300' : 'bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-300'"
+              >
+                <div class="flex items-center justify-between font-semibold">
+                  <span>{{ testResult.success ? '✓ 接口握手成功' : '✕ 连通测试失败' }}</span>
+                  <Badge :variant="testResult.success ? 'success' : 'destructive'">
+                    {{ testResult.latencyMs }} ms
+                  </Badge>
+                </div>
+                <div v-if="testResult.reply" class="text-[11px] opacity-80 mt-0.5">
+                  AI 回复: {{ testResult.reply }}
+                </div>
+                <div v-if="testResult.error" class="text-[11px] opacity-80 font-mono mt-0.5 break-all">
+                  错误日志: {{ testResult.error }}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <div class="flex items-center gap-3">
+            <Button
+              variant="primary"
+              icon="i-lucide-save"
+              @click="triggerToast('AI 引擎配置已成功保存！', 'success')"
+            >
+              保存配置
+            </Button>
+
+            <Button
+              variant="neutral"
+              icon="i-lucide-rotate-ccw"
+              @click="settingsStore.resetSettings(); triggerToast('已重置为默认配置 (gpt-6.1-sol)', 'info')"
+            >
+              恢复默认推荐配置
+            </Button>
+          </div>
         </div>
 
         <!-- ================= SECTION 5: 关于 ================= -->

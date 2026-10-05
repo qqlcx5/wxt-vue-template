@@ -13,8 +13,9 @@
 4. [端到端强类型通信 (Messaging API)](#4-端到端强类型通信-messaging-api)
 5. [后台服务中枢 (Context Menus, Commands, Alarms)](#5-后台服务中枢-context-menus-commands-alarms)
 6. [Side Panel 侧边栏与 Options 独立设置页](#6-side-panel-侧边栏与-options-独立设置页)
-7. [Content Script 与 Shadow DOM 样式隔离](#7-content-script-与-shadow-dom-样式隔离)
-8. [本地数据库与全文检索 (Dexie + MiniSearch)](#8-本地数据库与全文检索-dexie--minisearch)
+7. [Content Script 选区感知与 Shadow DOM 隔离](#7-content-script-选区感知与-shadow-dom-隔离)
+8. [通用 AI 流式中枢引擎 (services/ai.ts)](#8-通用-ai-流式中枢引擎-servicesaits)
+9. [本地数据库与全文检索 (Dexie + MiniSearch)](#9-本地数据库与全文检索-dexie--minisearch)
 
 ---
 
@@ -25,10 +26,11 @@ WXT 使用基于约定的文件路由，全部位于 `entrypoints/` 目录下：
 | 文件 / 目录路径 | 对应扩展能力 | 运行环境与特性 |
 | :--- | :--- | :--- |
 | `entrypoints/popup/` | 扩展弹出窗口 (Popup) | 临时 DOM 窗口，点击图标展开，移开即销毁。适合高频快速预览与控制 |
-| `entrypoints/sidepanel/` | 浏览器原生右侧边栏 | 长期停靠侧边栏 (Chrome 114+)。适合查资料、写便笺、多任务常驻 |
-| `entrypoints/options/` | 扩展偏好设置管理后台 | 独立大屏控制台，macOS 系统设置风格。适合数据导入导出、API Key 维护 |
+| `entrypoints/sidepanel/` | 浏览器原生右侧边栏 | 长期停靠侧边栏 (Chrome 114+)。内置 AI 对话、便笺与文章库 |
+| `entrypoints/chat/` | 全屏独立 AI 工作台 (Studio) | 独占标签页大屏工作区 (`/chat.html`)。会话管理、流式对话、Markdown 导出 |
+| `entrypoints/options/` | 扩展偏好设置管理后台 | 独立大屏控制台，macOS 系统设置风格。支持 API 连通性测速与模型配置 |
 | `entrypoints/background.ts` | 后台服务工作者 (Service Worker) | 无 DOM、事件驱动、自动休眠/唤醒。负责右键菜单、快捷键与定时任务 |
-| `entrypoints/content.ts` | 内容脚本 (Content Script) | 注入目标网页上下文中执行，以 Shadow DOM 挂载浮动工具球与悬浮面板 |
+| `entrypoints/content.ts` | 内容脚本 (Content Script) | 全网网页注入执行，以 Shadow DOM 挂载划词悬浮胶囊与右下角快捷面板 |
 
 ---
 
@@ -167,18 +169,27 @@ Service Worker 在 30 秒无操作后会自动休眠，脚手架通过 `browser.
 
 ---
 
-## 7. Content Script 与 Shadow DOM 样式隔离
+## 7. Content Script 选区感知与 Shadow DOM 隔离
 
 向宿主页面注入 UI 时，务必采用 Shadow DOM 挂载以杜绝样式互染。
 
-### 标准模板 (`entrypoints/content.ts`)
+### 1. 选区感知 Composable (`composables/useSelection.ts`)
+支持在任何网页圈选文字时，精确获取其绝对视口坐标与防壁碰撞：
+```typescript
+import { useTextSelection } from './composables/useSelection';
+
+const { selectedText, position, isVisible, clearSelection } = useTextSelection();
+```
+
+### 2. 标准注入脚本 (`entrypoints/content.ts`)
 ```typescript
 import { createApp } from 'vue';
+import { pinia } from '@/stores';
 import ContentApp from './content/ContentApp.vue';
 import 'virtual:uno.css';
 
 export default defineContentScript({
-  matches: ['*://*.google.com/*'],
+  matches: ['<all_urls>'],
   cssInjectionMode: 'ui',
   async main(ctx) {
     const ui = await createShadowRootUi(ctx, {
@@ -188,12 +199,11 @@ export default defineContentScript({
       append: 'last',
       onMount: (container) => {
         const app = createApp(ContentApp);
+        app.use(pinia);
         app.mount(container);
         return app;
       },
-      onRemove: (app) => {
-        app?.unmount();
-      },
+      onRemove: (app) => app?.unmount(),
     });
 
     ui.mount();
@@ -203,7 +213,133 @@ export default defineContentScript({
 
 ---
 
-## 8. 本地数据库与全文检索 (Dexie + MiniSearch)
+## 8. 通用 AI 流式中枢引擎 (`services/ai.ts`)
+
+封装了基于 `eventsource-parser` 的通用 SSE 流式大模型调用器，不绑定任何单一模型或业务场景，跨模型适配 **OpenAI、DeepSeek、Claude、Gemini 以及本地 Ollama (localhost:11434)**，自带打字机输出、主动中断 (`AbortController`)、指数退避重试 (429/503) 与 Token 消耗预估。
+
+### 1. 通用流式调用 `streamChat`
+```typescript
+import { streamChat } from '@/services/ai';
+
+const handle = streamChat({
+  model: 'gpt-6.1-sol', // 或 'deepseek', 'claude35', 'gemini15', 'ollama'
+  messages: [
+    { role: 'system', content: '你是一位资深技术专家。' },
+    { role: 'user', content: '请解释什么是 Manifest V3。' },
+  ],
+  onChunk: (delta, accumulated) => {
+    console.log('当前流式切片:', delta);
+    console.log('累积文本:', accumulated);
+  },
+  onFinish: (fullText, stats) => {
+    console.log('生成完成:', fullText);
+    console.log('Token 统计:', stats.estimatedTokens);
+  },
+  onError: (err) => {
+    console.error('调用出错:', err.message);
+  },
+});
+
+// 支持随时主动中断
+// handle.abort();
+```
+
+### 2. 预设模型与连通性检测 `testAiConnection`
+脚手架开箱预置了 `gpt-6.1-sol` 以及 OpenAI、DeepSeek、Claude、Gemini 等主流大模型配置：
+```typescript
+import { testAiConnection } from '@/services/ai';
+
+// 连通性与 Ping 延时测试
+const result = await testAiConnection('gpt-6.1-sol', apiKey, 'http://66.154.117.189:3000/v1');
+if (result.ok) {
+  console.log(`连接成功！延迟: ${result.latency}ms`);
+} else {
+  console.error(`连接失败: ${result.error}`);
+}
+```
+
+### 3. 四大 AI 交互场景完整覆盖
+脚手架为 AI 功能实现了全套专属 Apple 设计风格的 UI 界面：
+1. **全屏独立工作台 (`/chat.html` / `entrypoints/chat/`)**：
+   - 类似 ChatGPT/Claude 独立全屏大页，具备左侧多会话列表、历史检索、重命名与删除。
+   - 主屏支持流式打字机输出、实时停止生成、一键复制与 Markdown 文件导出。
+   - 底部内置快捷 Prompt Chips（3点速览、代码重构、双语翻译）。
+2. **原生侧边栏常驻 Copilot (`entrypoints/sidepanel/App.vue`)**：
+   - 首个默认标签页即为 AI 对话。
+   - 支持**「附带当前网页上下文」**开关，对话时自动读取当前活动标签页的 URL、Title 与正文片段。
+3. **弹出层极速随手问 (`entrypoints/popup/App.vue`)**：
+   - Popup 首页默认进入「AI 随身问」模式。
+   - 快速解答日常疑问，支持结果一键转存至侧边栏便笺或直接复制。
+   - 右上角一键无缝跳转全屏 AI Studio。
+4. **Options 设置中心健康诊断 (`entrypoints/options/App.vue`)**：
+   - 实时调节模型、Temperature 创造力滑块与系统角色设定 (System Prompt)。
+   - 提供「测试 API 连通性 (Ping)」实时网络健康检测按钮。
+
+### 4. 常用业务 Prompt 流水线
+- `summarizePageWithDefuddle(html, url, options)`: 结合 Defuddle 算法提取正文并输出 3 点核心提炼。
+- `explainAndOptimizeCode(code, language, options)`: 详细逐行解释代码逻辑并输出重构方案。
+- `academicPolish(text, options)`: 顶级学术论文/技术文档级中英文专业润色。
+- `bilingualTranslate(text, targetLang, options)`: 忠实保留术语与语境的双语翻译。
+- `explainContent(text, options)`: 划词悬浮胶囊一键通俗解释。
+- `summarizeContent(text, options)`: 快速 3 点要点摘要。
+
+---
+
+## 9. 网页交互杀手锏：元素剪藏与快照截图
+
+### 1. 网页元素拾取剪藏器 (`useElementClipper.ts` & `ElementClipper.vue`)
+类似印象笔记与 Notion 剪藏体验：
+- 鼠标滑过任何网页 DOM 节点时，自动显示苹果蓝半透明高亮选框与 `<tag>` 尺寸徽章。
+- 单击即时锁定目标区块，精准提取该节点的 Clean Text 与完整 HTML 代码。
+- 自动避开 `#wxt-shadow-ui` 扩展容器，绝不污染宿主网页。
+- 支持快捷键 `Esc` 退出拾取模式。
+
+```typescript
+import { useElementClipper } from '@/entrypoints/content/composables/useElementClipper';
+
+const { isClipperActive, hoveredInfo, selectedInfo, startClipper, stopClipper } = useElementClipper();
+
+// 启动元素拾取
+startClipper();
+```
+
+### 2. 网页可视区域快照截图 (`services/screenshot.ts`)
+封装 Chrome MV3 `browser.tabs.captureVisibleTab`：
+```typescript
+import { captureVisibleScreenshot, downloadScreenshot, saveScreenshotToArticles } from '@/services/screenshot';
+
+// 1. 捕获高画质 Base64 PNG 快照
+const dataUrl = await captureVisibleScreenshot();
+
+// 2. 自动下载为本地 PNG 图片
+downloadScreenshot(dataUrl, 'snapshot.png');
+
+// 3. 同时存入本地 Dexie 知识库
+await saveScreenshotToArticles(dataUrl, '网页快照');
+```
+
+---
+
+## 10. 高保真 Markdown 代码高亮组件 (`MarkdownViewer.vue`)
+
+专为 AI 流式输出与代码块展示量身定制：
+- 引入轻量级 `highlight.js`，支持 JavaScript, TypeScript, Python, HTML, CSS, JSON, Bash 等常见语言自动高亮。
+- 采用 macOS 原生交通灯 (红黄绿) 三色控制点设计视窗卡片，配备语言标签与一键复制代码按钮。
+- 同步支持行内粗体、行内代码、引用块与多级标题渲染。
+
+```vue
+<script setup>
+import { MarkdownViewer } from '@/components/ui';
+</script>
+
+<template>
+  <MarkdownViewer :content="aiResponse" />
+</template>
+```
+
+---
+
+## 11. 本地数据库与全文检索 (Dexie + MiniSearch)
 
 ### 1. IndexedDB 存储 (`services/db.ts`)
 ```typescript

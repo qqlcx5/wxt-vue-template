@@ -20,6 +20,7 @@ export { default as Kbd } from './Kbd.vue';
 export { default as Skeleton } from './Skeleton.vue';
 export { default as Avatar } from './Avatar.vue';
 export { default as Empty } from './Empty.vue';
+export { default as MarkdownViewer } from './MarkdownViewer.vue';
 
 // 常用 Reka UI 原语透传
 export {

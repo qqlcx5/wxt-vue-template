@@ -31,9 +31,11 @@ import {
   DialogDescription,
   DialogClose,
   TooltipProvider,
+  MarkdownViewer,
 } from '@/components/ui';
 import { useSettingsStore, useArticlesStore } from '@/stores';
 import { sendToBackground } from '@/utils/messaging';
+import { streamChat, type StreamChatHandle } from '@/services/ai';
 
 // 浅色为主，支持丝滑切换深色
 const isDark = useDark({
@@ -45,7 +47,65 @@ const settingsStore = useSettingsStore();
 const articlesStore = useArticlesStore();
 
 // 当前导航分段
-const currentTab = ref('featured');
+const currentTab = ref('ai');
+
+// ================= AI 随身问状态 =================
+const aiPrompt = ref('');
+const aiAnswer = ref('');
+const isAiStreaming = ref(false);
+let activePopupAiStream: StreamChatHandle | null = null;
+
+function handlePopupAiAsk(customPrompt?: string) {
+  const q = (customPrompt || aiPrompt.value).trim();
+  if (!q || isAiStreaming.value) return;
+
+  aiPrompt.value = q;
+  aiAnswer.value = '';
+  isAiStreaming.value = true;
+  activePopupAiStream?.abort();
+
+  activePopupAiStream = streamChat({
+    model: settingsStore.selectedModel,
+    messages: [
+      { role: 'system', content: settingsStore.systemPrompt || '你是一位严谨专业、富有洞察力的智能助手。' },
+      { role: 'user', content: q },
+    ],
+    temperature: settingsStore.temperature,
+    onChunk: (_delta, acc) => {
+      aiAnswer.value = acc;
+    },
+    onFinish: (full) => {
+      aiAnswer.value = full;
+      isAiStreaming.value = false;
+    },
+    onError: (err) => {
+      aiAnswer.value = `❌ 出错: ${err.message}`;
+      isAiStreaming.value = false;
+    },
+  });
+}
+
+function handleStopPopupAi() {
+  activePopupAiStream?.abort();
+  isAiStreaming.value = false;
+  triggerToast('已停止生成', 'info');
+}
+
+function handleCopyPopupAi() {
+  if (!aiAnswer.value) return;
+  navigator.clipboard.writeText(aiAnswer.value);
+  triggerToast('AI 回答已复制！', 'success');
+}
+
+function handleSaveAiToMemo() {
+  if (!aiAnswer.value) return;
+  settingsStore.memoNote = (settingsStore.memoNote || '') + `\n\n### AI 回答 (${settingsStore.selectedModel}):\n${aiAnswer.value}`;
+  triggerToast('已追加存入便笺！', 'success');
+}
+
+async function openChatStudio() {
+  await sendToBackground('OPEN_CHAT');
+}
 
 const searchInput = ref('');
 const volume = ref([65]);
@@ -114,9 +174,10 @@ async function openOptions() {
 
 // Select 下拉选单
 const modelOptions = [
-  { value: 'gpt4o', label: 'GPT-4o (Omni)', icon: 'i-lucide-sparkles' },
-  { value: 'claude35', label: 'Claude 3.5 Sonnet', icon: 'i-lucide-zap' },
-  { value: 'gemini15', label: 'Gemini 1.5 Pro', icon: 'i-lucide-bot' },
+  { value: 'gpt-6.1-sol', label: 'gpt-6.1-sol (当前专属推理通道)', icon: 'i-lucide-sparkles' },
+  { value: 'gpt4o', label: 'gpt-6.1-sol (Omni)', icon: 'i-lucide-zap' },
+  { value: 'claude35', label: 'Claude 3.5 Sonnet', icon: 'i-lucide-bot' },
+  { value: 'gemini15', label: 'Gemini 1.5 Pro', icon: 'i-lucide-layers' },
   { value: 'deepseek', label: 'DeepSeek-V3', icon: 'i-lucide-cpu' },
 ];
 
@@ -198,6 +259,16 @@ function replayProgress() {
             </button>
           </Tooltip>
 
+          <Tooltip content="打开全屏 AI 智能助手 (Studio)">
+            <button
+              type="button"
+              class="flex items-center justify-center h-6 w-6 rounded-full bg-black/[0.05] dark:bg-white/[0.1] text-[#007AFF] hover:bg-black/[0.08] dark:hover:bg-white/[0.15] transition-all cursor-pointer border-0 outline-none"
+              @click="openChatStudio"
+            >
+              <i class="i-lucide-bot text-xs" />
+            </button>
+          </Tooltip>
+
           <Tooltip content="系统偏好设置">
             <button
               type="button"
@@ -225,11 +296,126 @@ function replayProgress() {
         <SegmentedControl
           v-model="currentTab"
           :options="[
+            { value: 'ai', label: 'AI 随身问', icon: 'i-lucide-bot' },
             { value: 'featured', label: '常用控件', icon: 'i-lucide-layout-grid' },
             { value: 'forms', label: '表单输入', icon: 'i-lucide-edit-3' },
             { value: 'cards', label: '视窗浮层', icon: 'i-lucide-layers' },
           ]"
         />
+
+        <!-- ==================== TAB 0: AI 随身问 (AI COPILOT) ==================== -->
+        <div v-if="currentTab === 'ai'" class="flex flex-col gap-3 animate-in fade-in duration-150">
+          <Card title="专属 AI 推理助手">
+            <div class="flex items-center justify-between py-1">
+              <div class="flex items-center gap-2.5">
+                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#007AFF] text-white shadow-sm">
+                  <i class="i-lucide-sparkles text-sm" />
+                </div>
+                <div class="flex flex-col">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-xs font-mono font-semibold">{{ settingsStore.selectedModel }}</span>
+                    <Badge variant="success" class="scale-85 origin-left">就绪</Badge>
+                  </div>
+                  <span class="text-[11px] text-neutral-400 mt-0.5">高速 SSE 打字机流式输出</span>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1.5">
+                <Button variant="secondary" size="sm" icon="i-lucide-panel-right" @click="openSidePanel">
+                  侧边栏
+                </Button>
+                <Button variant="primary" size="sm" icon="i-lucide-external-link" @click="openChatStudio">
+                  全屏
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          <!-- 提问输入卡片 -->
+          <Card title="即时提问与分析">
+            <div class="flex flex-col gap-2.5 py-0.5">
+              <Textarea
+                v-model="aiPrompt"
+                placeholder="在此输入任何问题，或从下方快捷 Prompt 点击开始..."
+                :rows="2"
+                @keydown.enter.exact.prevent="handlePopupAiAsk()"
+              />
+
+              <!-- 快捷 Prompt 标签 -->
+              <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px]">
+                <button
+                  type="button"
+                  class="px-2.5 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-neutral-700 dark:text-neutral-300 whitespace-nowrap border-0 cursor-pointer transition-all active:scale-95"
+                  @click="handlePopupAiAsk('请简要解释什么是 Manifest V3，并列出 3 个重大架构变化。')"
+                >
+                  💡 MV3 架构解释
+                </button>
+                <button
+                  type="button"
+                  class="px-2.5 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-neutral-700 dark:text-neutral-300 whitespace-nowrap border-0 cursor-pointer transition-all active:scale-95"
+                  @click="handlePopupAiAsk('请写一个 Vue 3 Composition API 的防抖 Debounce 函数示例。')"
+                >
+                  💻 Vue3 防抖函数
+                </button>
+                <button
+                  type="button"
+                  class="px-2.5 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-neutral-700 dark:text-neutral-300 whitespace-nowrap border-0 cursor-pointer transition-all active:scale-95"
+                  @click="handlePopupAiAsk('请提供几个提高代码可维护性与测试覆盖率的工程化最佳实践。')"
+                >
+                  🛠️ 工程化最佳实践
+                </button>
+              </div>
+
+              <div class="flex items-center justify-between pt-1 border-t border-black/[0.04] dark:border-white/[0.04]">
+                <span class="text-[11px] text-neutral-400">Enter 发送</span>
+                <div class="flex items-center gap-2">
+                  <Button
+                    v-if="isAiStreaming"
+                    variant="destructive"
+                    size="sm"
+                    icon="i-lucide-square"
+                    @click="handleStopPopupAi"
+                  >
+                    停止
+                  </Button>
+                  <Button
+                    v-else
+                    variant="primary"
+                    size="sm"
+                    :disabled="!aiPrompt.trim()"
+                    icon="i-lucide-send"
+                    @click="handlePopupAiAsk()"
+                  >
+                    发送
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <!-- AI 流式回答结果卡片 -->
+          <Card v-if="aiAnswer || isAiStreaming" title="AI 流式生成结果">
+            <div class="flex flex-col gap-2 py-0.5">
+              <div v-if="!aiAnswer && isAiStreaming" class="flex items-center gap-2 text-xs text-neutral-400 py-4 justify-center">
+                <i class="i-lucide-loader-2 text-sm animate-spin text-[#007AFF]" />
+                <span>正在组织推理生成...</span>
+              </div>
+              <div v-else class="max-h-56 overflow-y-auto pr-1">
+                <MarkdownViewer :content="aiAnswer" />
+                <span v-if="isAiStreaming" class="inline-block w-1.5 h-3.5 bg-[#007AFF] ml-0.5 animate-pulse align-middle" />
+              </div>
+
+              <div class="flex items-center justify-between pt-2 border-t border-black/[0.04] dark:border-white/[0.04]">
+                <Button variant="secondary" size="sm" icon="i-lucide-file-text" @click="handleSaveAiToMemo">
+                  存入便笺
+                </Button>
+                <Button variant="primary" size="sm" icon="i-lucide-copy" @click="handleCopyPopupAi">
+                  复制回答
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
 
         <!-- ==================== TAB 1: 常用控件 (FEATURED) ==================== -->
         <div v-if="currentTab === 'featured'" class="flex flex-col gap-4 animate-in fade-in duration-150">

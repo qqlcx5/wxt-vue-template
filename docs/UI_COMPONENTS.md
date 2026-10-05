@@ -338,7 +338,7 @@ import { Select } from '@/components/ui';
 
 const selectedModel = ref('gpt4o');
 const modelOptions = [
-  { value: 'gpt4o', label: 'GPT-4o (Omni)', icon: 'i-lucide-sparkles' },
+  { value: 'gpt4o', label: 'gpt-6.1-sol (Omni)', icon: 'i-lucide-sparkles' },
   { value: 'claude35', label: 'Claude 3.5 Sonnet', icon: 'i-lucide-zap' },
   { value: 'gemini15', label: 'Gemini 1.5 Pro', icon: 'i-lucide-bot' },
 ];

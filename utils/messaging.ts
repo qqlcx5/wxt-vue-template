@@ -38,6 +38,14 @@ export interface ExtensionMessages {
     };
     response: { success: boolean; id?: number; error?: string };
   };
+  CAPTURE_SCREENSHOT: {
+    request: void;
+    response: { success: boolean; dataUrl?: string; error?: string };
+  };
+  OPEN_CHAT: {
+    request: void;
+    response: { success: boolean; error?: string };
+  };
 }
 
 export type MessageKey = keyof ExtensionMessages;
