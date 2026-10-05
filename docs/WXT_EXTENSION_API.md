@@ -244,24 +244,34 @@ const handle = streamChat({
 // handle.abort();
 ```
 
-### 2. 预设模型与连通性检测 `testAiConnection`
-脚手架开箱预置了 `gpt-6.1-sol` 以及 OpenAI、DeepSeek、Claude、Gemini 等主流大模型配置：
+### 2. 多服务商体系与动态模型探测 (`types/ai.ts` & `services/ai.ts`)
+脚手架开箱支持 **自定义网关、OpenAI、DeepSeek、Claude、Gemini、Ollama、OpenRouter、硅基流动、Kimi** 等服务商独立并行管理：
 ```typescript
-import { testAiConnection } from '@/services/ai';
+import { testProviderConnection, fetchRemoteModels } from '@/services/ai';
 
-// 连通性与 Ping 延时测试
-const result = await testAiConnection('gpt-6.1-sol', apiKey, 'http://66.154.117.189:3000/v1');
-if (result.ok) {
-  console.log(`连接成功！延迟: ${result.latency}ms`);
-} else {
-  console.error(`连接失败: ${result.error}`);
+// 1. 服务商连通性与 Ping 延时测试
+const pingRes = await testProviderConnection('custom', 'gpt-6.1-sol');
+if (pingRes.success) {
+  console.log(`Ping 成功，延迟: ${pingRes.latencyMs}ms`);
+}
+
+// 2. 远程可用模型动态探测 (GET /v1/models)
+const modelsRes = await fetchRemoteModels('custom');
+if (modelsRes.success) {
+  console.log('远程支持的模型列表:', modelsRes.models);
 }
 ```
 
-### 3. 四大 AI 交互场景完整覆盖
+### 3. 精细超参数与场景分流路由 (Parameters & Routing)
+- **推理超参数**：`temperature` (0.0-2.0)、`topP` (0.0-1.0)、`maxTokens`、`presencePenalty`、`frequencyPenalty`、`contextRounds` (多轮历史智能截断)；
+- **场景路由分派**：为全屏工作台 (`chatStudioModel`)、侧边栏 (`sidepanelModel`)、划词悬浮菜单 (`selectionModel`)、网页提取 (`summaryModel`) 分别绑定最适模型；
+- **系统角色词库**：预置 6 款专家人设（全栈架构师、双语审校、极简摘要、学术润色、深度推理），支持自定义添加。
+
+### 4. 四大 AI 交互场景完整覆盖
 脚手架为 AI 功能实现了全套专属 Apple 设计风格的 UI 界面：
 1. **全屏独立工作台 (`/chat.html` / `entrypoints/chat/`)**：
    - 类似 ChatGPT/Claude 独立全屏大页，具备左侧多会话列表、历史检索、重命名与删除。
+   - 顶栏配备 Apple 胶囊风格的**实时模型切换**与**专家人设切换**下拉组件。
    - 主屏支持流式打字机输出、实时停止生成、一键复制与 Markdown 文件导出。
    - 底部内置快捷 Prompt Chips（3点速览、代码重构、双语翻译）。
 2. **原生侧边栏常驻 Copilot (`entrypoints/sidepanel/App.vue`)**：

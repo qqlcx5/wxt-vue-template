@@ -8,6 +8,7 @@ import {
   Tooltip,
   TooltipProvider,
   MarkdownViewer,
+  Select,
 } from '@/components/ui';
 import { useSettingsStore } from '@/stores';
 import { streamChat, type StreamChatHandle } from '@/services/ai';
@@ -18,6 +19,15 @@ const isDark = useDark({ initialValue: 'light' });
 const toggleDark = useToggle(isDark);
 
 const settingsStore = useSettingsStore();
+
+const currentChatModel = ref(settingsStore.featureRouting.chatStudioModel || settingsStore.selectedModel || 'gpt-6.1-sol');
+
+const promptRoleOptions = computed(() =>
+  settingsStore.systemPromptPresets.map((p) => ({
+    label: p.title,
+    value: p.id,
+  }))
+);
 
 interface Message {
   id: string;
@@ -154,14 +164,14 @@ async function handleSendMessage(customPrompt?: string) {
   scrollToBottom();
 
   const apiMessages = [
-    { role: 'system' as const, content: settingsStore.systemPrompt || '你是一位严谨专业、富有洞察力的智能助手。' },
-    ...session.messages.slice(-8, -1).map((m) => ({ role: m.role, content: m.content })),
+    { role: 'system' as const, content: settingsStore.currentSystemPrompt },
+    ...session.messages.slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
   ];
 
   activeStreamHandle = streamChat({
-    model: settingsStore.selectedModel,
+    model: currentChatModel.value,
+    feature: 'chatStudio',
     messages: apiMessages,
-    temperature: settingsStore.temperature,
     onChunk: (_delta, acc) => {
       assistantMsg.content = acc;
       scrollToBottom();
@@ -313,13 +323,33 @@ const promptShortcuts = [
           <div class="flex items-center gap-2.5">
             <h1 class="text-sm font-semibold tracking-tight">{{ currentSession.title }}</h1>
             <span class="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <Badge variant="secondary" class="font-mono text-[10px]">{{ settingsStore.selectedModel }}</Badge>
           </div>
 
           <div class="flex items-center gap-2">
+            <!-- 实时模型选择器 -->
+            <div class="flex items-center gap-1.5">
+              <span class="text-[11px] text-neutral-400 font-medium">模型:</span>
+              <Select
+                v-model="currentChatModel"
+                :options="settingsStore.availableModels"
+                class="w-56 text-xs"
+              />
+            </div>
+
+            <!-- 角色人设选择器 -->
+            <div class="flex items-center gap-1.5">
+              <span class="text-[11px] text-neutral-400 font-medium">人设:</span>
+              <Select
+                :model-value="settingsStore.activePromptPresetId"
+                :options="promptRoleOptions"
+                class="w-44 text-xs"
+                @update:model-value="(val) => { if (typeof val === 'string') settingsStore.setActivePromptPreset(val); }"
+              />
+            </div>
+
             <Button variant="secondary" size="sm" @click="handleExportMarkdown">
               <i class="i-lucide-copy text-xs mr-1" />
-              <span>导出为 Markdown</span>
+              <span>导出</span>
             </Button>
             <Button variant="neutral" size="sm" @click="handleClearCurrentSession">
               <i class="i-lucide-eraser text-xs mr-1" />
@@ -344,7 +374,7 @@ const promptShortcuts = [
               <span v-if="msg.role === 'user'">👤 提问者</span>
               <span v-else class="flex items-center gap-1 text-[#007AFF] font-semibold">
                 <i class="i-lucide-bot text-xs" />
-                <span>{{ settingsStore.selectedModel }}</span>
+                <span>{{ currentChatModel }}</span>
               </span>
               <span>{{ dayjs(msg.timestamp).format('HH:mm:ss') }}</span>
             </div>

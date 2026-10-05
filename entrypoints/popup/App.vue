@@ -65,12 +65,11 @@ function handlePopupAiAsk(customPrompt?: string) {
   activePopupAiStream?.abort();
 
   activePopupAiStream = streamChat({
-    model: settingsStore.selectedModel,
+    feature: 'selection',
     messages: [
-      { role: 'system', content: settingsStore.systemPrompt || '你是一位严谨专业、富有洞察力的智能助手。' },
+      { role: 'system', content: settingsStore.currentSystemPrompt },
       { role: 'user', content: q },
     ],
-    temperature: settingsStore.temperature,
     onChunk: (_delta, acc) => {
       aiAnswer.value = acc;
     },

@@ -197,7 +197,8 @@ function handleClose() {
           <span class="flex h-5 w-5 items-center justify-center rounded-full bg-[#007AFF] text-white">
             <i class="i-lucide-sparkles text-[11px]" />
           </span>
-          <span class="text-xs font-semibold tracking-tight">AI 智能中枢</span>
+          <span class="text-xs font-semibold tracking-tight">AI 智能分析</span>
+          <span class="text-[9px] font-mono text-[#007AFF] bg-[#007AFF]/10 px-1.5 py-0.5 rounded-full">{{ settingsStore.featureRouting.selectionModel }}</span>
         </div>
 
         <!-- 切换 Tab: 解释 / 翻译 / 摘要 -->

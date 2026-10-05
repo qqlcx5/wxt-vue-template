@@ -292,8 +292,9 @@ export const useSettingsStore = defineStore('settings', {
     // 更新服务商基础配置
     updateProvider(providerId: string, updates: Partial<AiProviderConfig>) {
       const index = this.providers.findIndex((item) => item.id === providerId);
-      if (index !== -1) {
-        this.providers[index] = { ...this.providers[index], ...updates };
+      const existing = this.providers[index];
+      if (index !== -1 && existing) {
+        this.providers[index] = { ...existing, ...updates, id: existing.id };
         // 同步旧兼容字段
         if (providerId === 'custom') {
           if (updates.baseUrl) this.customEndpoint = updates.baseUrl;
@@ -367,7 +368,7 @@ export const useSettingsStore = defineStore('settings', {
       this.systemPromptPresets = this.systemPromptPresets.filter((p) => p.id !== presetId);
       if (this.activePromptPresetId === presetId) {
         this.activePromptPresetId = 'general';
-        this.systemPrompt = defaultSystemPromptPresets[0].prompt;
+        this.systemPrompt = defaultSystemPromptPresets[0]?.prompt ?? '';
       }
     },
     resetSettings() {
@@ -381,7 +382,7 @@ export const useSettingsStore = defineStore('settings', {
       this.deepseekKey = '';
       this.customEndpoint = 'http://66.154.117.189:3000/v1';
       this.temperature = 0.7;
-      this.systemPrompt = defaultSystemPromptPresets[0].prompt;
+      this.systemPrompt = defaultSystemPromptPresets[0]?.prompt ?? '';
       this.providers = defaultProviders;
       this.inferenceParams = {
         temperature: 0.7,

@@ -111,9 +111,7 @@ export async function resolveApiConfig(
     const routingKey = `${feature}Model` as keyof typeof settings.featureRouting;
     targetModel = settings.featureRouting[routingKey];
   }
-  if (!targetModel) {
-    targetModel = settings.model || 'gpt-6.1-sol';
-  }
+  const finalModel: string = targetModel || settings.model || 'gpt-6.1-sol';
 
   // 2. 根据模型寻址对应的 Provider
   let matchedProvider: AiProviderConfig | undefined;
@@ -127,13 +125,13 @@ export async function resolveApiConfig(
       enabled: true,
       baseUrl: customEndpoint,
       apiKey: customKey || settings.openaiKey || '',
-      models: [{ id: targetModel, name: targetModel, providerId: 'adhoc' }],
+      models: [{ id: finalModel, name: finalModel, providerId: 'adhoc' }],
     };
   } else {
     // 遍历所有已启用的服务商，匹配模型列表
     matchedProvider = providers
       .filter((p) => p.enabled)
-      .find((p) => p.models.some((m) => m.id === targetModel));
+      .find((p) => p.models.some((m) => m.id === finalModel));
 
     // 若未在启用服务商的模型列表中找到，优先选用自定义服务商 (custom) 或首个启用的服务商
     if (!matchedProvider) {
@@ -152,7 +150,7 @@ export async function resolveApiConfig(
   baseURL = baseURL.replace(/\/+$/, '');
 
   return {
-    model: targetModel,
+    model: finalModel,
     baseURL,
     apiKey,
     customHeaders,

@@ -12,6 +12,7 @@ import {
   Badge,
   Kbd,
   Toast,
+  SegmentedControl,
   DialogRoot,
   DialogTrigger,
   DialogContent,
@@ -21,7 +22,7 @@ import {
   TooltipProvider,
 } from '@/components/ui';
 import { useSettingsStore, useArticlesStore } from '@/stores';
-import { testAiConnection } from '@/services/ai';
+import { testAiConnection, testProviderConnection, fetchRemoteModels } from '@/services/ai';
 
 const isDark = useDark({ initialValue: 'light' });
 const toggleDark = useToggle(isDark);
@@ -100,6 +101,94 @@ function openBrowserShortcuts() {
 
 const testingConnection = ref(false);
 const testResult = ref<{ success: boolean; latencyMs: number; reply?: string; error?: string } | null>(null);
+
+const aiSubTab = ref<'providers' | 'parameters' | 'routing' | 'prompts'>('providers');
+const aiSubTabs = [
+  { value: 'providers', label: '模型服务商 (Providers)' },
+  { value: 'parameters', label: '推理超参数 (Parameters)' },
+  { value: 'routing', label: '场景分流绑定 (Routing)' },
+  { value: 'prompts', label: '系统角色词库 (Prompts)' },
+];
+
+const providerPingStatus = ref<Record<string, { testing: boolean; result?: { success: boolean; latencyMs: number; reply?: string; error?: string } }>>({});
+const providerFetchingModels = ref<Record<string, boolean>>({});
+const newModelInputs = ref<Record<string, string>>({});
+const keyVisibility = ref<Record<string, boolean>>({});
+
+async function handleTestProvider(providerId: string) {
+  providerPingStatus.value[providerId] = { testing: true };
+  try {
+    const res = await testProviderConnection(providerId);
+    providerPingStatus.value[providerId] = { testing: false, result: res };
+    if (res.success) {
+      triggerToast(`连通测试通过！延迟 ${res.latencyMs}ms`, 'success');
+    } else {
+      triggerToast(`连接测试未通过: ${res.error}`, 'error');
+    }
+  } catch (err: any) {
+    providerPingStatus.value[providerId] = { testing: false, result: { success: false, latencyMs: 0, error: err.message } };
+    triggerToast(`请求异常: ${err.message}`, 'error');
+  }
+}
+
+async function handleFetchRemoteModels(providerId: string) {
+  providerFetchingModels.value[providerId] = true;
+  try {
+    const res = await fetchRemoteModels(providerId);
+    if (res.success && res.models.length > 0) {
+      settingsStore.mergeDiscoveredModels(providerId, res.models);
+      triggerToast(`成功获取并同步了 ${res.models.length} 个模型！`, 'success');
+    } else {
+      triggerToast(res.error || '未拉取到可用模型', 'warning');
+    }
+  } catch (err: any) {
+    triggerToast(`拉取失败: ${err.message}`, 'error');
+  } finally {
+    providerFetchingModels.value[providerId] = false;
+  }
+}
+
+function handleAddCustomModel(providerId: string) {
+  const name = newModelInputs.value[providerId]?.trim();
+  if (!name) return;
+  settingsStore.addCustomModel(providerId, name, name);
+  newModelInputs.value[providerId] = '';
+  triggerToast(`已添加模型: ${name}`, 'success');
+}
+
+// 快速设置 Max Tokens 选项
+const maxTokenPresets = [
+  { label: '1024', value: 1024 },
+  { label: '2048', value: 2048 },
+  { label: '4096 (推荐)', value: 4096 },
+  { label: '8192', value: 8192 },
+  { label: '16384', value: 16384 },
+  { label: '不限 (0)', value: 0 },
+];
+
+// 自定义角色预设表单
+const showNewPromptModal = ref(false);
+const newPromptTitle = ref('');
+const newPromptDesc = ref('');
+const newPromptText = ref('');
+
+function handleCreateCustomPrompt() {
+  if (!newPromptTitle.value.trim() || !newPromptText.value.trim()) {
+    triggerToast('请填写人设名称和 System Prompt 内容', 'warning');
+    return;
+  }
+  settingsStore.addCustomPromptPreset({
+    title: newPromptTitle.value.trim(),
+    icon: 'i-lucide-user-check',
+    description: newPromptDesc.value.trim() || '自定义角色设定',
+    prompt: newPromptText.value.trim(),
+  });
+  newPromptTitle.value = '';
+  newPromptDesc.value = '';
+  newPromptText.value = '';
+  showNewPromptModal.value = false;
+  triggerToast('自定义角色人设创建成功！', 'success');
+}
 
 async function handleTestAiConnection() {
   testingConnection.value = true;
@@ -421,7 +510,7 @@ onMounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <h2 class="text-xl font-bold tracking-tight">AI 模型引擎与工作台</h2>
-              <p class="text-xs text-neutral-500 mt-1">配置智能推理大语言模型、中转 Endpoint 与系统角色提示词</p>
+              <p class="text-xs text-neutral-500 mt-1">管理多服务商凭证、精细调节推理超参数、场景分流与系统角色库</p>
             </div>
 
             <Button variant="primary" size="sm" icon="i-lucide-external-link" @click="openChatStudio">
@@ -429,123 +518,498 @@ onMounted(() => {
             </Button>
           </div>
 
-          <Card title="默认推理模型">
-            <div class="flex flex-col gap-2 py-1">
-              <label class="text-[12px] text-neutral-500">选择当前优先启用的推理引擎（已针对 gpt-6.1-sol 深度适配）</label>
-              <Select v-model="settingsStore.selectedModel" :options="aiModelOptions" />
+          <!-- Apple 胶囊分段选项卡 -->
+          <SegmentedControl v-model="aiSubTab" :options="aiSubTabs" />
+
+          <!-- ================= SUB-TAB 1: 模型服务商 (Providers) ================= -->
+          <div v-if="aiSubTab === 'providers'" class="flex flex-col gap-4">
+            <div
+              v-for="provider in settingsStore.providers"
+              :key="provider.id"
+              class="rounded-2xl border transition-all"
+              :class="provider.enabled
+                ? 'bg-white/80 dark:bg-[#1c1c1e]/80 border-black/10 dark:border-white/10 shadow-[0_2px_12px_rgba(0,0,0,0.03)]'
+                : 'bg-black/[0.02] dark:bg-white/[0.02] border-black/5 dark:border-white/5 opacity-70'"
+            >
+              <!-- 服务商头部 -->
+              <div class="flex items-center justify-between p-4 pb-3 border-b border-black/[0.04] dark:border-white/[0.05]">
+                <div class="flex items-center gap-3">
+                  <div
+                    class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors"
+                    :class="provider.enabled ? 'bg-[#007AFF]/10 text-[#007AFF]' : 'bg-black/5 dark:bg-white/5 text-neutral-400'"
+                  >
+                    <i :class="provider.icon" class="text-lg" />
+                  </div>
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-[14px] font-semibold text-neutral-900 dark:text-neutral-100">{{ provider.name }}</span>
+                      <Badge :variant="provider.enabled ? 'success' : 'secondary'" class="text-[10px] px-2 py-0.5">
+                        {{ provider.enabled ? '已启用' : '已停用' }}
+                      </Badge>
+                      <Badge
+                        v-if="providerPingStatus[provider.id]?.result"
+                        :variant="providerPingStatus[provider.id]?.result?.success ? 'success' : 'destructive'"
+                        class="text-[10px] px-2 py-0.5"
+                      >
+                        {{ providerPingStatus[provider.id]?.result?.success ? `${providerPingStatus[provider.id]?.result?.latencyMs}ms` : '连通失败' }}
+                      </Badge>
+                    </div>
+                    <span class="text-[11px] text-neutral-400 font-mono mt-0.5 block truncate max-w-[280px]">
+                      {{ provider.baseUrl }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                  <Button
+                    v-if="provider.enabled"
+                    variant="secondary"
+                    size="sm"
+                    :disabled="providerPingStatus[provider.id]?.testing"
+                    class="h-7 px-2.5 text-xs rounded-full"
+                    @click="handleTestProvider(provider.id)"
+                  >
+                    <i class="i-lucide-activity mr-1 text-[11px]" :class="{ 'animate-pulse': providerPingStatus[provider.id]?.testing }" />
+                    {{ providerPingStatus[provider.id]?.testing ? '测试中...' : 'Ping' }}
+                  </Button>
+                  <Switch
+                    :model-value="provider.enabled"
+                    @update:model-value="(val) => settingsStore.toggleProvider(provider.id, val)"
+                  />
+                </div>
+              </div>
+
+              <!-- 服务商配置详情（启用时展示） -->
+              <div v-if="provider.enabled" class="p-4 flex flex-col gap-3.5 bg-black/[0.01] dark:bg-white/[0.01]">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <!-- Base URL -->
+                  <div class="flex flex-col gap-1.5">
+                    <label class="text-xs font-medium text-neutral-700 dark:text-neutral-300">Base URL 端点</label>
+                    <Input
+                      v-model="provider.baseUrl"
+                      placeholder="https://api.example.com/v1"
+                      icon="i-lucide-globe"
+                      clearable
+                    />
+                  </div>
+
+                  <!-- API Key -->
+                  <div class="flex flex-col gap-1.5">
+                    <div class="flex items-center justify-between">
+                      <label class="text-xs font-medium text-neutral-700 dark:text-neutral-300">API 访问密钥 (Key)</label>
+                      <button
+                        type="button"
+                        class="text-[11px] text-[#007AFF] hover:underline bg-transparent border-0 cursor-pointer flex items-center gap-1"
+                        @click="keyVisibility[provider.id] = !keyVisibility[provider.id]"
+                      >
+                        <i :class="keyVisibility[provider.id] ? 'i-lucide-eye-off' : 'i-lucide-eye'" />
+                        {{ keyVisibility[provider.id] ? '隐藏' : '显示' }}
+                      </button>
+                    </div>
+                    <Input
+                      v-model="provider.apiKey"
+                      :type="keyVisibility[provider.id] ? 'text' : 'password'"
+                      placeholder="sk-..."
+                      icon="i-lucide-key"
+                      clearable
+                    />
+                  </div>
+                </div>
+
+                <!-- 模型列表管理区 -->
+                <div class="flex flex-col gap-2 pt-1 border-t border-black/[0.04] dark:border-white/[0.04]">
+                  <div class="flex items-center justify-between">
+                    <div class="text-xs font-medium text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
+                      <span>可用模型列表</span>
+                      <span class="text-[10px] text-neutral-400 font-normal">({{ provider.models.length }} 个)</span>
+                    </div>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      :disabled="providerFetchingModels[provider.id]"
+                      class="h-6 text-[11px] px-2 text-[#007AFF]"
+                      @click="handleFetchRemoteModels(provider.id)"
+                    >
+                      <i class="i-lucide-refresh-cw mr-1 text-[10px]" :class="{ 'animate-spin': providerFetchingModels[provider.id] }" />
+                      {{ providerFetchingModels[provider.id] ? '拉取中...' : '拉取远程可用模型 (/models)' }}
+                    </Button>
+                  </div>
+
+                  <!-- 模型 Chips 列表 -->
+                  <div class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1 bg-black/[0.02] dark:bg-white/[0.02] rounded-xl border border-black/[0.04] dark:border-white/[0.04]">
+                    <div
+                      v-for="m in provider.models"
+                      :key="m.id"
+                      class="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono transition-all"
+                      :class="settingsStore.selectedModel === m.id
+                        ? 'bg-[#007AFF] text-white shadow-sm'
+                        : 'bg-black/[0.04] dark:bg-white/[0.06] text-neutral-700 dark:text-neutral-300 hover:bg-black/[0.08] dark:hover:bg-white/[0.1]'"
+                    >
+                      <span>{{ m.name || m.id }}</span>
+                      <button
+                        v-if="m.isCustom || provider.models.length > 1"
+                        type="button"
+                        class="border-0 bg-transparent cursor-pointer p-0 text-current opacity-40 hover:opacity-100 flex items-center justify-center transition-opacity"
+                        title="删除该模型"
+                        @click.stop="settingsStore.removeCustomModel(provider.id, m.id)"
+                      >
+                        <i class="i-lucide-x text-[10px]" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 添加自定义模型输入行 -->
+                  <div class="flex items-center gap-2 mt-1">
+                    <Input
+                      v-model="newModelInputs[provider.id]"
+                      placeholder="输入自定义模型 ID (如 gpt-6.1-sol, deepseek-v3...)"
+                      size="sm"
+                      class="text-xs"
+                      @keydown.enter.prevent="handleAddCustomModel(provider.id)"
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      class="shrink-0 rounded-full h-8 px-3"
+                      @click="handleAddCustomModel(provider.id)"
+                    >
+                      ＋ 添加模型
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </Card>
+          </div>
 
-          <Card title="API 访问凭证与中转代理 (严格加密保存在本地 Storage)">
-            <div class="flex flex-col gap-3 py-1">
-              <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-medium">OpenAI / 兼容接口 API Key</label>
-                <Input
-                  v-model="settingsStore.openaiKey"
-                  type="password"
-                  placeholder="sk-..."
-                  icon="i-lucide-key"
-                  clearable
-                />
+          <!-- ================= SUB-TAB 2: 推理超参数 (Parameters) ================= -->
+          <div v-if="aiSubTab === 'parameters'" class="flex flex-col gap-4 animate-in fade-in duration-150">
+            <Card title="采样温度与核采样 (Sampling & Creativity)">
+              <div class="flex flex-col gap-4 py-1">
+                <!-- Temperature -->
+                <div class="flex flex-col gap-1.5">
+                  <div class="flex justify-between items-center text-xs">
+                    <span class="text-neutral-800 dark:text-neutral-200 font-medium">采样温度 (Temperature): {{ settingsStore.inferenceParams.temperature.toFixed(2) }}</span>
+                    <span class="text-[11px] text-neutral-400">
+                      {{ settingsStore.inferenceParams.temperature < 0.3 ? '严谨确定 (代码/分析)' : (settingsStore.inferenceParams.temperature > 1.2 ? '天马行空 (头脑风暴)' : '平衡推荐') }}
+                    </span>
+                  </div>
+                  <Slider
+                    :model-value="[Math.round(settingsStore.inferenceParams.temperature * 100)]"
+                    :max="200"
+                    accent="blue"
+                    @update:model-value="(val) => { if (val?.[0] !== undefined) settingsStore.inferenceParams.temperature = val[0] / 100; }"
+                  />
+                  <span class="text-[11px] text-neutral-400">0.0 (最严谨保守，输出完全确定) ~ 2.0 (极度发散创造力)，默认推荐 0.70</span>
+                </div>
+
+                <div class="border-b border-black/[0.04] dark:border-white/[0.05]" />
+
+                <!-- Top P -->
+                <div class="flex flex-col gap-1.5">
+                  <div class="flex justify-between items-center text-xs">
+                    <span class="text-neutral-800 dark:text-neutral-200 font-medium">核采样概率 (Top P): {{ settingsStore.inferenceParams.topP.toFixed(2) }}</span>
+                    <span class="text-[11px] text-neutral-400">只从前 P% 概率的候选词池中采样</span>
+                  </div>
+                  <Slider
+                    :model-value="[Math.round(settingsStore.inferenceParams.topP * 100)]"
+                    :max="100"
+                    accent="blue"
+                    @update:model-value="(val) => { if (val?.[0] !== undefined) settingsStore.inferenceParams.topP = val[0] / 100; }"
+                  />
+                </div>
               </div>
+            </Card>
 
-              <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-medium">自定义中转 API Base URL</label>
-                <Input
-                  v-model="settingsStore.customEndpoint"
-                  placeholder="http://66.154.117.189:3000/v1"
-                  icon="i-lucide-globe"
-                  clearable
-                />
-                <span class="text-[11px] text-neutral-400">支持直连或内网/中转代理服务</span>
+            <Card title="生成长度与重复惩罚 (Length & Penalties)">
+              <div class="flex flex-col gap-4 py-1">
+                <!-- Max Tokens -->
+                <div class="flex flex-col gap-2">
+                  <div class="flex justify-between items-center text-xs">
+                    <span class="text-neutral-800 dark:text-neutral-200 font-medium">单次最大生成长度 (Max Completion Tokens)</span>
+                    <span class="text-[11px] text-neutral-400 font-mono">{{ settingsStore.inferenceParams.maxTokens === 0 ? '不限制 (自适应)' : `${settingsStore.inferenceParams.maxTokens} Tokens` }}</span>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button
+                      v-for="preset in maxTokenPresets"
+                      :key="preset.value"
+                      type="button"
+                      class="px-3 py-1 rounded-full text-xs font-medium border-0 cursor-pointer transition-all active:scale-95"
+                      :class="settingsStore.inferenceParams.maxTokens === preset.value
+                        ? 'bg-[#007AFF] text-white shadow-sm'
+                        : 'bg-black/[0.05] dark:bg-white/[0.08] text-neutral-700 dark:text-neutral-300 hover:bg-black/[0.08] dark:hover:bg-white/[0.12]'"
+                      @click="settingsStore.inferenceParams.maxTokens = preset.value"
+                    >
+                      {{ preset.label }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="border-b border-black/[0.04] dark:border-white/[0.05]" />
+
+                <!-- Presence Penalty & Frequency Penalty -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div class="flex flex-col gap-1.5">
+                    <div class="flex justify-between items-center text-xs">
+                      <span class="text-neutral-800 dark:text-neutral-200 font-medium">存在惩罚 (Presence): {{ settingsStore.inferenceParams.presencePenalty.toFixed(1) }}</span>
+                    </div>
+                    <Slider
+                      :model-value="[Math.round((settingsStore.inferenceParams.presencePenalty + 2) * 25)]"
+                      :max="100"
+                      accent="blue"
+                      @update:model-value="(val) => { if (val?.[0] !== undefined) settingsStore.inferenceParams.presencePenalty = Number(((val[0] / 25) - 2).toFixed(1)); }"
+                    />
+                    <span class="text-[11px] text-neutral-400">大于 0 鼓励模型谈论新主题</span>
+                  </div>
+
+                  <div class="flex flex-col gap-1.5">
+                    <div class="flex justify-between items-center text-xs">
+                      <span class="text-neutral-800 dark:text-neutral-200 font-medium">频率惩罚 (Frequency): {{ settingsStore.inferenceParams.frequencyPenalty.toFixed(1) }}</span>
+                    </div>
+                    <Slider
+                      :model-value="[Math.round((settingsStore.inferenceParams.frequencyPenalty + 2) * 25)]"
+                      :max="100"
+                      accent="blue"
+                      @update:model-value="(val) => { if (val?.[0] !== undefined) settingsStore.inferenceParams.frequencyPenalty = Number(((val[0] / 25) - 2).toFixed(1)); }"
+                    />
+                    <span class="text-[11px] text-neutral-400">大于 0 降低字词的逐字重复率</span>
+                  </div>
+                </div>
               </div>
+            </Card>
 
-              <div class="border-b border-black/[0.05] dark:border-white/[0.06] my-1" />
+            <Card title="上下文窗口截断与流式传输 (Context & Stream)">
+              <div class="flex flex-col gap-3 py-1">
+                <!-- Context Rounds -->
+                <div class="flex flex-col gap-1.5">
+                  <div class="flex justify-between items-center text-xs">
+                    <span class="text-neutral-800 dark:text-neutral-200 font-medium">历史对话轮数 (Context Rounds): {{ settingsStore.inferenceParams.contextRounds }} 轮</span>
+                    <span class="text-[11px] text-neutral-400">超出将自动截断早期上下文</span>
+                  </div>
+                  <Slider
+                    :model-value="[settingsStore.inferenceParams.contextRounds]"
+                    :min="1"
+                    :max="20"
+                    accent="blue"
+                    @update:model-value="(val) => { if (val?.[0] !== undefined) settingsStore.inferenceParams.contextRounds = val[0]; }"
+                  />
+                  <span class="text-[11px] text-neutral-400">发送给模型时保留 System Prompt 并取最近 N 轮对话，有效杜绝长对话爆 Token 与超时。</span>
+                </div>
 
-              <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-medium">备用 DeepSeek 官方 API Key (可选)</label>
-                <Input
-                  v-model="settingsStore.deepseekKey"
-                  type="password"
-                  placeholder="sk-..."
-                  icon="i-lucide-key"
-                  clearable
-                />
+                <div class="border-b border-black/[0.04] dark:border-white/[0.05]" />
+
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="text-[13px] font-medium">启用 SSE 流式输出 (Stream)</div>
+                    <div class="text-[11px] text-neutral-400 mt-0.5">逐字打字机实时返回，极大缩减首字感知等待时间</div>
+                  </div>
+                  <Switch v-model="settingsStore.inferenceParams.stream" />
+                </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+          </div>
 
-          <Card title="推理参数微调与系统角色设定">
-            <div class="flex flex-col gap-3.5 py-1">
-              <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-medium">系统角色设定 (System Prompt)</label>
+          <!-- ================= SUB-TAB 3: 场景模型路由 (Routing) ================= -->
+          <div v-if="aiSubTab === 'routing'" class="flex flex-col gap-4 animate-in fade-in duration-150">
+            <Card title="业务场景与最佳适配模型分流">
+              <div class="flex flex-col gap-4 py-1">
+                <!-- 场景 1: 全屏独立工作台 -->
+                <div class="flex flex-col gap-1.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
+                      <i class="i-lucide-laptop text-sm text-[#007AFF]" />
+                      全屏独立工作台 (Chat Studio)
+                    </span>
+                    <Badge variant="primary" class="text-[10px]">高智力深度推理</Badge>
+                  </div>
+                  <Select v-model="settingsStore.featureRouting.chatStudioModel" :options="settingsStore.availableModels" />
+                  <span class="text-[11px] text-neutral-400">推荐使用 gpt-6.1-sol、Claude 3.5 Sonnet 或 DeepSeek-R1，适合深度长篇架构思考与长代码撰写。</span>
+                </div>
+
+                <div class="border-b border-black/[0.04] dark:border-white/[0.05]" />
+
+                <!-- 场景 2: 侧边栏常驻助手 -->
+                <div class="flex flex-col gap-1.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
+                      <i class="i-lucide-panel-right text-sm text-green-500" />
+                      原生侧边栏常驻助手 (Sidepanel Copilot)
+                    </span>
+                    <Badge variant="success" class="text-[10px]">网页多任务伴随</Badge>
+                  </div>
+                  <Select v-model="settingsStore.featureRouting.sidepanelModel" :options="settingsStore.availableModels" />
+                  <span class="text-[11px] text-neutral-400">伴随当前网页边查资料边提问，支持自动注入网页正文上下文。</span>
+                </div>
+
+                <div class="border-b border-black/[0.04] dark:border-white/[0.05]" />
+
+                <!-- 场景 3: 划词悬浮菜单 -->
+                <div class="flex flex-col gap-1.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
+                      <i class="i-lucide-sparkles text-sm text-amber-500" />
+                      划词悬浮胶囊 (Selection Toolbar)
+                    </span>
+                    <Badge variant="warning" class="text-[10px]">极速高性价比</Badge>
+                  </div>
+                  <Select v-model="settingsStore.featureRouting.selectionModel" :options="settingsStore.availableModels" />
+                  <span class="text-[11px] text-neutral-400">网页圈选文字后的即时翻译与通俗解释，推荐极速响应模型 (如 gpt-4o-mini 或 DeepSeek-V3)。</span>
+                </div>
+
+                <div class="border-b border-black/[0.04] dark:border-white/[0.05]" />
+
+                <!-- 场景 4: 网页正文提取速览 -->
+                <div class="flex flex-col gap-1.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
+                      <i class="i-lucide-file-text text-sm text-purple-500" />
+                      网页正文提取与 3 点要点摘要 (Summary)
+                    </span>
+                    <Badge variant="secondary" class="text-[10px]">超大上下文窗口</Badge>
+                  </div>
+                  <Select v-model="settingsStore.featureRouting.summaryModel" :options="settingsStore.availableModels" />
+                  <span class="text-[11px] text-neutral-400">清洗提取万字长文后归纳提炼，推荐长窗口模型 (如 Gemini 1.5 Pro 或 GPT-4o)。</span>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <!-- ================= SUB-TAB 4: 系统角色词库 (Prompts) ================= -->
+          <div v-if="aiSubTab === 'prompts'" class="flex flex-col gap-4 animate-in fade-in duration-150">
+            <!-- 当前激活人设卡片 -->
+            <Card title="当前生效的系统角色设定 (System Prompt)">
+              <div class="flex flex-col gap-3 py-1">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                      {{ settingsStore.systemPromptPresets.find(p => p.id === settingsStore.activePromptPresetId)?.title || '自定义人设' }}
+                    </span>
+                    <Badge variant="primary" class="text-[10px]">当前生效中</Badge>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    class="h-6 text-[11px] text-[#007AFF]"
+                    @click="settingsStore.systemPrompt = settingsStore.systemPromptPresets.find(p => p.id === settingsStore.activePromptPresetId)?.prompt || settingsStore.systemPrompt; triggerToast('已还原为此预设原版', 'info')"
+                  >
+                    重置为本预设默认值
+                  </Button>
+                </div>
+
                 <Textarea
                   v-model="settingsStore.systemPrompt"
-                  placeholder="设定 AI 回答风格与预设角色..."
-                  :rows="3"
+                  placeholder="输入自定义 System Prompt 人设设定..."
+                  :rows="4"
+                  class="font-mono text-xs leading-relaxed"
                 />
+              </div>
+            </Card>
+
+            <!-- 精选人设库 -->
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-sm font-semibold">精选专家角色人设库</h3>
+                <p class="text-[11px] text-neutral-400 mt-0.5">点击即可一键切换为人设，自动赋予模型相应的思维深度与输出风格</p>
               </div>
 
-              <div class="flex flex-col gap-1.5">
-                <div class="flex justify-between items-center text-xs">
-                  <span class="text-neutral-500 font-medium">采样温度 (Temperature): {{ settingsStore.temperature }}</span>
-                  <span class="text-[11px] text-neutral-400">更低更精准 / 更高更有创造力</span>
-                </div>
-                <Slider
-                  :model-value="[Math.round(settingsStore.temperature * 100)]"
-                  :max="100"
-                  accent="blue"
-                  @update:model-value="(val) => { if (val?.[0] !== undefined) settingsStore.temperature = val[0] / 100; }"
-                />
-              </div>
+              <DialogRoot v-model:open="showNewPromptModal">
+                <DialogTrigger as-child>
+                  <Button variant="secondary" size="sm" icon="i-lucide-plus" class="rounded-full h-7 px-3 text-xs">
+                    新建自定义人设
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogTitle class="text-[15px] font-semibold">创建自定义系统角色人设</DialogTitle>
+                  <DialogDescription class="text-xs text-neutral-500 mt-1">
+                    定制专属于你业务场景的 System Prompt 角色。
+                  </DialogDescription>
+                  <div class="flex flex-col gap-3 mt-3">
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium">角色名称</label>
+                      <Input v-model="newPromptTitle" placeholder="如：电商文案爆款专家" />
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium">角色简述</label>
+                      <Input v-model="newPromptDesc" placeholder="一句话描述该角色的长处" />
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium">System Prompt 内容</label>
+                      <Textarea v-model="newPromptText" placeholder="详细的人设指令..." :rows="5" />
+                    </div>
+                  </div>
+                  <div class="flex justify-end gap-2 mt-4">
+                    <DialogClose as-child>
+                      <Button variant="neutral" size="sm">取消</Button>
+                    </DialogClose>
+                    <Button variant="primary" size="sm" @click="handleCreateCustomPrompt">
+                      确认创建
+                    </Button>
+                  </div>
+                </DialogContent>
+              </DialogRoot>
             </div>
-          </Card>
 
-          <Card title="连通性诊断与实时测试">
-            <div class="flex flex-col gap-2.5 py-1">
-              <div class="flex items-center justify-between">
-                <div class="flex flex-col">
-                  <span class="text-[13px] font-medium">当前配置健康度自检</span>
-                  <span class="text-[11px] text-neutral-400 mt-0.5">向当前配置的 Endpoint 发送握手 Ping 测速</span>
-                </div>
-
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  :disabled="testingConnection"
-                  icon="i-lucide-activity"
-                  @click="handleTestAiConnection"
-                >
-                  {{ testingConnection ? '正在测速...' : '测试 API 连通性' }}
-                </Button>
-              </div>
-
+            <!-- 人设网格 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div
-                v-if="testResult"
-                class="mt-1 p-3 rounded-xl border text-xs flex flex-col gap-1"
-                :class="testResult.success ? 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-300' : 'bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-300'"
+                v-for="preset in settingsStore.systemPromptPresets"
+                :key="preset.id"
+                class="p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3"
+                :class="settingsStore.activePromptPresetId === preset.id
+                  ? 'bg-white/90 dark:bg-[#1c1c1e] border-[#007AFF] shadow-[0_4px_16px_rgba(0,122,255,0.08)] ring-1 ring-[#007AFF]/30'
+                  : 'bg-white/50 dark:bg-white/[0.03] border-black/5 dark:border-white/5 hover:border-black/15 dark:hover:border-white/15'"
               >
-                <div class="flex items-center justify-between font-semibold">
-                  <span>{{ testResult.success ? '✓ 接口握手成功' : '✕ 连通测试失败' }}</span>
-                  <Badge :variant="testResult.success ? 'success' : 'destructive'">
-                    {{ testResult.latencyMs }} ms
-                  </Badge>
+                <div class="flex flex-col gap-1.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-[13px] font-semibold flex items-center gap-1.5 text-neutral-900 dark:text-neutral-100">
+                      <i :class="preset.icon" class="text-[#007AFF]" />
+                      {{ preset.title }}
+                    </span>
+                    <Badge v-if="settingsStore.activePromptPresetId === preset.id" variant="primary" class="text-[10px]">
+                      当前应用
+                    </Badge>
+                    <Badge v-else variant="secondary" class="text-[10px]">
+                      {{ preset.isBuiltIn ? '官方内置' : '用户自定义' }}
+                    </Badge>
+                  </div>
+                  <p class="text-[11px] text-neutral-500 line-clamp-2 leading-relaxed">
+                    {{ preset.description }}
+                  </p>
+                  <p class="text-[10px] text-neutral-400 font-mono line-clamp-3 bg-black/[0.02] dark:bg-white/[0.02] p-2 rounded-lg mt-1">
+                    {{ preset.prompt }}
+                  </p>
                 </div>
-                <div v-if="testResult.reply" class="text-[11px] opacity-80 mt-0.5">
-                  AI 回复: {{ testResult.reply }}
-                </div>
-                <div v-if="testResult.error" class="text-[11px] opacity-80 font-mono mt-0.5 break-all">
-                  错误日志: {{ testResult.error }}
+
+                <div class="flex items-center justify-end gap-2 pt-1 border-t border-black/[0.04] dark:border-white/[0.04]">
+                  <Button
+                    v-if="!preset.isBuiltIn"
+                    variant="destructive"
+                    size="sm"
+                    class="h-7 text-xs px-2.5"
+                    @click="settingsStore.deletePromptPreset(preset.id); triggerToast('已删除此人设', 'info')"
+                  >
+                    删除
+                  </Button>
+                  <Button
+                    v-if="settingsStore.activePromptPresetId !== preset.id"
+                    variant="secondary"
+                    size="sm"
+                    class="h-7 text-xs px-3"
+                    @click="settingsStore.setActivePromptPreset(preset.id); triggerToast(`已切换为人设：${preset.title}`, 'success')"
+                  >
+                    设为当前人设
+                  </Button>
                 </div>
               </div>
             </div>
-          </Card>
+          </div>
 
-          <div class="flex items-center gap-3">
+          <!-- 底部保存条 -->
+          <div class="flex items-center gap-3 pt-2">
             <Button
               variant="primary"
               icon="i-lucide-save"
-              @click="triggerToast('AI 引擎配置已成功保存！', 'success')"
+              @click="triggerToast('AI 引擎全部配置已实时保存并生效！', 'success')"
             >
               保存配置
             </Button>
@@ -553,7 +1017,7 @@ onMounted(() => {
             <Button
               variant="neutral"
               icon="i-lucide-rotate-ccw"
-              @click="settingsStore.resetSettings(); triggerToast('已重置为默认配置 (gpt-6.1-sol)', 'info')"
+              @click="settingsStore.resetSettings(); triggerToast('已重置为默认推荐配置 (gpt-6.1-sol)', 'info')"
             >
               恢复默认推荐配置
             </Button>

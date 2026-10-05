@@ -100,7 +100,7 @@ async function handleSendChatMessage(customText?: string) {
   scrollToBottom();
 
   const apiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    { role: 'system', content: settingsStore.systemPrompt || '你是一位严谨专业、富有洞察力的智能助手。' },
+    { role: 'system', content: settingsStore.currentSystemPrompt },
   ];
 
   if (attachPageContext.value) {
@@ -119,9 +119,8 @@ async function handleSendChatMessage(customText?: string) {
   }
 
   activeChatStreamHandle = streamChat({
-    model: settingsStore.selectedModel,
+    feature: 'sidepanel',
     messages: apiMessages,
-    temperature: settingsStore.temperature,
     onChunk: (_delta, acc) => {
       assistantMsg.content = acc;
       scrollToBottom();
@@ -348,7 +347,7 @@ onMounted(async () => {
             <div class="flex items-center gap-1.5">
               <span class="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
               <span class="text-xs font-mono font-medium text-neutral-600 dark:text-neutral-300">
-                {{ settingsStore.selectedModel }}
+                {{ settingsStore.featureRouting.sidepanelModel }}
               </span>
               <Badge variant="primary" class="scale-80 origin-left">已连接</Badge>
             </div>
@@ -438,7 +437,7 @@ onMounted(async () => {
                 <span v-if="msg.role === 'user'">👤 提问</span>
                 <span v-else class="flex items-center gap-1 text-[#007AFF]">
                   <i class="i-lucide-bot text-xs" />
-                  <span>gpt-6.1-sol</span>
+                  <span>{{ settingsStore.featureRouting.sidepanelModel }}</span>
                 </span>
                 <span>{{ dayjs(msg.timestamp).format('HH:mm') }}</span>
               </div>
@@ -472,7 +471,7 @@ onMounted(async () => {
             <div class="relative flex items-end rounded-2xl bg-white dark:bg-[#1c1c1e] border border-black/10 dark:border-white/10 p-1.5 shadow-[0_2px_10px_rgba(0,0,0,0.06)] focus-within:border-[#007AFF] transition-all">
               <textarea
                 v-model="chatInput"
-                placeholder="向 gpt-6.1-sol 提问... (Enter 发送，Shift+Enter 换行)"
+                :placeholder="`向 ${settingsStore.featureRouting.sidepanelModel} 提问... (Enter 发送)`"
                 rows="2"
                 class="w-full resize-none border-0 bg-transparent px-2 py-1 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus:outline-none leading-relaxed"
                 @keydown.enter.exact.prevent="handleSendChatMessage()"
