@@ -16,6 +16,14 @@ import {
   AccordionItem,
   DialogContent,
   SegmentedControl,
+  Select,
+  DropdownMenu,
+  RadioGroup,
+  Toast,
+  Kbd,
+  Skeleton,
+  Avatar,
+  Empty,
   AccordionRoot,
   DialogRoot,
   DialogTrigger,
@@ -48,6 +56,55 @@ const checkMeta = ref(true);
 const checkIndex = ref(true);
 const checkHighlight = ref(false);
 
+// Toast 状态提示
+const toastVisible = ref(false);
+const toastMessage = ref('已成功同步到本地缓存');
+const toastType = ref<'success' | 'info' | 'warning' | 'error'>('success');
+
+function triggerToast(msg: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') {
+  toastMessage.value = msg;
+  toastType.value = type;
+  toastVisible.value = true;
+  setTimeout(() => {
+    toastVisible.value = false;
+  }, 2200);
+}
+
+// Select 下拉选单
+const selectedModel = ref('gpt4o');
+const modelOptions = [
+  { value: 'gpt4o', label: 'GPT-4o (Omni)', icon: 'i-lucide-sparkles' },
+  { value: 'claude35', label: 'Claude 3.5 Sonnet', icon: 'i-lucide-zap' },
+  { value: 'gemini15', label: 'Gemini 1.5 Pro', icon: 'i-lucide-bot' },
+  { value: 'deepseek', label: 'DeepSeek-V3', icon: 'i-lucide-cpu' },
+];
+
+// RadioGroup 单选框组
+const storageMode = ref('local');
+const storageOptions = [
+  { value: 'local', label: '本地离线 IndexedDB', description: '数据严格保存在当前浏览器沙箱中，保护隐私' },
+  { value: 'cloud', label: '端到端加密云备份', description: '跨设备自动同步收藏夹与快照记录' },
+];
+
+// 下拉菜单操作项定义
+const menuGroups = [
+  {
+    actions: [
+      { label: '复制快照链接', icon: 'i-lucide-copy', kbd: '⌘C', onSelect: () => triggerToast('链接已复制到剪贴板') },
+      { label: '导出为 Markdown', icon: 'i-lucide-file-text', kbd: '⌘E', onSelect: () => triggerToast('Markdown 文件导出就绪') },
+      { label: '在独立标签页打开', icon: 'i-lucide-external-link', onSelect: () => triggerToast('已在新标签页打开') },
+    ],
+  },
+  {
+    actions: [
+      { label: '清除当前页面快照', icon: 'i-lucide-trash-2', destructive: true, onSelect: () => triggerToast('页面快照已清除', 'warning') },
+    ],
+  },
+];
+
+// 骨架屏演示切换
+const showSkeleton = ref(false);
+
 let progressTimer: ReturnType<typeof setInterval>;
 function replayProgress() {
   progress.value = 0;
@@ -65,9 +122,12 @@ function replayProgress() {
 <template>
   <TooltipProvider :delay-duration="200">
     <div
-      class="w-[410px] max-h-[640px] overflow-y-auto flex flex-col font-sans transition-colors duration-200 select-none antialiased"
+      class="w-[410px] max-h-[640px] overflow-y-auto flex flex-col font-sans transition-colors duration-200 select-none antialiased relative"
       :class="isDark ? 'bg-[#000000] text-[#f5f5f7]' : 'bg-[#F2F2F7] text-[#1d1d1f]'"
     >
+      <!-- 动态灵动岛 Toast 提示 -->
+      <Toast :show="toastVisible" :message="toastMessage" :type="toastType" />
+
       <!-- macOS 风格应用视窗顶栏 -->
       <div
         class="sticky top-0 z-40 flex items-center justify-between px-3.5 py-2.5 border-b border-black/[0.06] dark:border-white/[0.08] backdrop-blur-2xl transition-colors"
@@ -103,13 +163,58 @@ function replayProgress() {
           v-model="currentTab"
           :options="[
             { value: 'featured', label: '常用控件', icon: 'i-lucide-layout-grid' },
-            { value: 'forms', label: '表单与输入', icon: 'i-lucide-edit-3' },
-            { value: 'cards', label: '卡片与弹窗', icon: 'i-lucide-layers' },
+            { value: 'forms', label: '表单输入', icon: 'i-lucide-edit-3' },
+            { value: 'cards', label: '视窗浮层', icon: 'i-lucide-layers' },
           ]"
         />
 
         <!-- ==================== TAB 1: 常用控件 (FEATURED) ==================== -->
         <div v-if="currentTab === 'featured'" class="flex flex-col gap-4 animate-in fade-in duration-150">
+          <!-- 账户与快捷键卡片 (Avatar + Kbd) -->
+          <Card title="用户账户与快捷键">
+            <div class="flex items-center justify-between py-1">
+              <div class="flex items-center gap-3">
+                <Avatar
+                  fallback="AP"
+                  shape="squircle"
+                  size="default"
+                  class="bg-[#007AFF]/10 text-[#007AFF] font-semibold"
+                />
+                <div class="flex flex-col">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[13px] font-medium leading-tight text-[#1d1d1f] dark:text-[#f5f5f7]">Apple Developer</span>
+                    <Badge variant="primary" class="scale-90 origin-left">Pro</Badge>
+                  </div>
+                  <span class="text-[11px] text-[#8e8e93] leading-tight mt-0.5">developer@apple.com</span>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1.5">
+                <Tooltip content="唤醒全局搜索">
+                  <Kbd>⌘K</Kbd>
+                </Tooltip>
+                <Tooltip content="快速提取网页">
+                  <Kbd>⌥D</Kbd>
+                </Tooltip>
+              </div>
+            </div>
+
+            <!-- Inset Divider -->
+            <div class="ml-[48px] my-2 border-b border-black/[0.05] dark:border-white/[0.06]" />
+
+            <div class="flex items-center justify-between py-0.5">
+              <span class="text-[12px] text-[#6c6c70] dark:text-[#8e8e93]">灵动岛状态通知演示</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="i-lucide-bell-ring"
+                @click="triggerToast('通知：当前书签已同步至 Dexie 本地库', 'success')"
+              >
+                弹出 Toast
+              </Button>
+            </div>
+          </Card>
+
           <!-- iOS 设置分组卡片 (Grouped Inset List) -->
           <Card title="系统偏好设置">
             <div class="flex flex-col">
@@ -232,7 +337,26 @@ function replayProgress() {
             </div>
           </Card>
 
-          <Card title="选项勾选列表">
+          <!-- 下拉选择器 (Select) -->
+          <Card title="下拉列表选择器 (Select)">
+            <div class="flex flex-col gap-2 py-0.5">
+              <label class="text-[12px] text-[#6c6c70] dark:text-[#8e8e93]">默认智能分析模型</label>
+              <Select
+                v-model="selectedModel"
+                :options="modelOptions"
+                placeholder="选择语言模型..."
+              />
+            </div>
+          </Card>
+
+          <!-- 单选列表 (RadioGroup) -->
+          <Card title="单选框组 (RadioGroup)">
+            <div class="py-0.5">
+              <RadioGroup v-model="storageMode" :options="storageOptions" />
+            </div>
+          </Card>
+
+          <Card title="多选选项列表 (Checkbox)">
             <div class="flex flex-col gap-2.5 py-0.5">
               <div class="flex items-center gap-2.5">
                 <Checkbox v-model:checked="checkMeta" id="check-1" />
@@ -249,13 +373,13 @@ function replayProgress() {
               <div class="flex items-center gap-2.5">
                 <Checkbox v-model:checked="checkHighlight" id="check-3" />
                 <label for="check-3" class="text-[13px] text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer">
-                  提取代码块时启用高保真高亮解析
+                  提取代码块时启用高保真语法高亮解析
                 </label>
               </div>
             </div>
           </Card>
 
-          <Card title="色彩徽章胶囊">
+          <Card title="色彩徽章胶囊 (Badge)">
             <div class="flex flex-wrap gap-2 py-0.5">
               <Badge variant="primary" icon="i-lucide-sparkles">精选推荐</Badge>
               <Badge variant="success" icon="i-lucide-check-circle-2">已就绪</Badge>
@@ -270,13 +394,13 @@ function replayProgress() {
         <!-- ==================== TAB 3: 卡片与弹窗 (CARDS & MODALS) ==================== -->
         <div v-if="currentTab === 'cards'" class="flex flex-col gap-4 animate-in fade-in duration-150">
           <!-- 弹窗与弹出菜单操作 -->
-          <Card title="macOS 视窗浮层">
-            <div class="grid grid-cols-2 gap-2.5 py-0.5">
+          <Card title="macOS 视窗与菜单浮层">
+            <div class="grid grid-cols-3 gap-2 py-0.5">
               <!-- Dialog Modal -->
               <DialogRoot>
                 <DialogTrigger as-child>
-                  <Button variant="primary" icon="i-lucide-app-window">
-                    打开工作表弹窗
+                  <Button variant="primary" size="sm" icon="i-lucide-app-window">
+                    工作表
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
@@ -302,11 +426,20 @@ function replayProgress() {
                 </DialogContent>
               </DialogRoot>
 
+              <!-- DropdownMenu 苹果操作菜单 -->
+              <DropdownMenu :groups="menuGroups">
+                <template #trigger>
+                  <Button variant="secondary" size="sm" icon="i-lucide-more-vertical">
+                    更多菜单
+                  </Button>
+                </template>
+              </DropdownMenu>
+
               <!-- Popover 气泡菜单 -->
               <Popover>
                 <template #trigger>
-                  <Button variant="secondary" icon="i-lucide-sliders">
-                    气泡配置菜单
+                  <Button variant="secondary" size="sm" icon="i-lucide-sliders">
+                    气泡面板
                   </Button>
                 </template>
                 <div class="flex flex-col gap-2.5">
@@ -319,6 +452,43 @@ function replayProgress() {
                 </div>
               </Popover>
             </div>
+          </Card>
+
+          <!-- 骨架屏与空状态演示 (Skeleton & Empty) -->
+          <Card title="空状态与加载骨架 (Empty & Skeleton)">
+            <div class="flex items-center justify-between pb-2 border-b border-black/[0.04] dark:border-white/[0.06] mb-2">
+              <span class="text-[12px] text-[#6c6c70] dark:text-[#8e8e93]">切换数据加载骨架屏</span>
+              <Switch v-model:checked="showSkeleton" />
+            </div>
+
+            <!-- 骨架屏态 -->
+            <div v-if="showSkeleton" class="flex flex-col gap-2.5 py-1">
+              <div class="flex items-center gap-3">
+                <Skeleton class="h-9 w-9 rounded-full" />
+                <div class="flex flex-col gap-1.5 flex-1">
+                  <Skeleton class="h-3.5 w-3/4" />
+                  <Skeleton class="h-2.5 w-1/2" />
+                </div>
+              </div>
+              <Skeleton class="h-16 w-full rounded-xl mt-1" />
+            </div>
+
+            <!-- 空状态展示 -->
+            <Empty
+              v-else
+              icon="i-lucide-folder-search"
+              title="暂无保存的网页快照"
+              description="点击浏览器工具栏图标或快捷键 ⌥D 立即捕获当前页面的纯净 Markdown 正文"
+            >
+              <Button
+                variant="primary"
+                size="sm"
+                icon="i-lucide-plus"
+                @click="triggerToast('已开始提取当前活跃标签页...', 'info')"
+              >
+                立即提取当前页
+              </Button>
+            </Empty>
           </Card>
 
           <!-- iOS 折叠手风琴 -->
