@@ -1,42 +1,37 @@
 <script lang="ts" setup>
 import { ref } from 'vue';
+import { useDark, useToggle } from '@vueuse/core';
 import {
-  SwitchRoot,
-  SwitchThumb,
+  Button,
+  Switch,
+  Slider,
+  Progress,
+  Tooltip,
+  AccordionItem,
+  DialogContent,
+  AccordionRoot,
+  DialogRoot,
+  DialogTrigger,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
   TabsRoot,
   TabsList,
   TabsTrigger,
   TabsContent,
-  SliderRoot,
-  SliderTrack,
-  SliderRange,
-  SliderThumb,
-  DialogRoot,
-  DialogTrigger,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-  DialogClose,
-  TooltipProvider,
-  TooltipRoot,
-  TooltipTrigger,
-  TooltipContent,
-  CheckboxRoot,
-  CheckboxIndicator,
-  AccordionRoot,
-  AccordionItem,
-  AccordionTrigger,
-  AccordionContent,
   ToggleGroupRoot,
   ToggleGroupItem,
-  ProgressRoot,
   Separator,
-} from 'reka-ui';
+  TooltipProvider,
+} from '@/components/ui';
+
+// 暗黑模式接管
+const isDark = useDark();
+const toggleDark = useToggle(isDark);
 
 const count = ref(0);
-const darkMode = ref(true);
 const sliderVal = ref([50]);
-const checked = ref(true);
+const subscribed = ref(true);
 const toggleVal = ref('center');
 const progress = ref(65);
 
@@ -56,246 +51,203 @@ function animateProgress() {
 
 <template>
   <TooltipProvider :delay-duration="200">
-    <div class="w-400px max-h-600px overflow-y-auto flex flex-col items-center gap-8 p-6 bg-zinc-900 text-white/90">
+    <div
+      class="w-[420px] max-h-[620px] overflow-y-auto flex flex-col items-center gap-6 p-6 transition-colors duration-200"
+      :class="isDark ? 'bg-zinc-900 text-white/90' : 'bg-slate-50 text-slate-800'"
+    >
       <!-- Header -->
       <div class="flex items-center gap-4">
-        <img src="/wxt.svg" class="h-12 hover:drop-shadow-green transition-all duration-300 cursor-pointer" alt="WXT" />
-        <span class="text-2xl font-bold text-white/50">+</span>
-        <img src="@/assets/vue.svg" class="h-12 hover:drop-shadow-green transition-all duration-300 cursor-pointer" alt="Vue" />
-        <span class="text-2xl font-bold text-white/50">+</span>
-        <div class="px-3 py-1 rounded-full bg-violet-500/20 text-violet-400 text-sm font-semibold border border-violet-500/30">
+        <img src="/wxt.svg" class="h-10 hover:scale-110 transition-transform cursor-pointer" alt="WXT" />
+        <span class="text-xl font-bold opacity-40">+</span>
+        <img src="@/assets/vue.svg" class="h-10 hover:scale-110 transition-transform cursor-pointer" alt="Vue" />
+        <span class="text-xl font-bold opacity-40">+</span>
+        <div class="px-2.5 py-1 rounded-full bg-violet-500/20 text-violet-400 text-xs font-semibold border border-violet-500/30 flex items-center gap-1.5">
+          <i class="i-lucide-palette text-xs" />
           UnoCSS
         </div>
       </div>
 
-      <!-- Gradient Title -->
-      <h1 class="text-3xl font-extrabold bg-gradient-to-r from-emerald-400 via-cyan-400 to-violet-400 bg-clip-text text-transparent tracking-tight">
-        Reka UI + UnoCSS
-      </h1>
-
-      <!-- Counter -->
-      <div class="flex items-center gap-4">
-        <button
-          class="px-5 py-2 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-medium hover:bg-emerald-500/30 hover:scale-105 active:scale-95 transition-all cursor-pointer"
-          @click="count++"
-        >
-          count is {{ count }}
-        </button>
-        <span class="text-sm text-white/40">UnoCSS utilities</span>
+      <!-- Title -->
+      <div class="text-center">
+        <h1 class="text-2xl font-extrabold bg-gradient-to-r from-emerald-400 via-cyan-400 to-violet-400 bg-clip-text text-transparent tracking-tight">
+          WXT + Reka UI + UnoCSS
+        </h1>
+        <p class="text-xs opacity-50 mt-1">现代化生产级 Chrome 扩展脚手架</p>
       </div>
 
-      <Separator class="w-full h-px bg-white/10" />
+      <!-- Counter Button -->
+      <div class="flex items-center gap-3">
+        <Button variant="default" size="default" @click="count++">
+          <i class="i-lucide-sparkles text-sm" />
+          <span>点击计数: {{ count }}</span>
+        </Button>
+        <span class="text-xs opacity-40">纯 CSS 图标 + 封装 UI</span>
+      </div>
 
-      <!-- ========== Reka UI Components Demo ========== -->
+      <Separator class="w-full h-px opacity-10 bg-current" />
 
-      <div class="w-full flex flex-col gap-6">
-
-        <!-- Switch + Checkbox Row -->
+      <!-- ========== Components Showcase ========== -->
+      <div class="w-full flex flex-col gap-5">
+        <!-- Dark Mode & Subscribe Row -->
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <SwitchRoot
-              v-model:checked="darkMode"
-              class="relative w-11 h-6 rounded-full bg-white/15 data-[state=checked]:bg-emerald-500 transition-colors"
-            >
-              <SwitchThumb
-                class="block absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-md transform transition-transform data-[state=checked]:translate-x-5"
-              />
-            </SwitchRoot>
-            <span class="text-sm text-white/70">Dark Mode</span>
+            <Switch :checked="isDark" @update:checked="toggleDark()" />
+            <span class="text-xs font-medium opacity-80 flex items-center gap-1.5">
+              <i :class="isDark ? 'i-lucide-moon text-cyan-400' : 'i-lucide-sun text-amber-500'" class="text-sm" />
+              {{ isDark ? '暗黑模式' : '明亮模式' }}
+            </span>
           </div>
 
-          <TooltipRoot>
-            <TooltipTrigger as-child>
-              <div class="flex items-center gap-2">
-                <CheckboxRoot
-                  v-model:checked="checked"
-                  class="w-5 h-5 rounded-md border border-white/30 data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500 transition-colors flex items-center justify-center"
-                >
-                  <CheckboxIndicator class="text-white text-xs">
-                    ✓
-                  </CheckboxIndicator>
-                </CheckboxRoot>
-                <span class="text-sm text-white/70">Subscribe</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent
-              class="bg-white/10 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg border border-white/10 shadow-lg"
-              :side-offset="6"
+          <Tooltip content="开启后将接收扩展版本与功能通知">
+            <div
+              class="flex items-center gap-2 cursor-pointer text-xs opacity-80 hover:opacity-100 transition-opacity"
+              @click="subscribed = !subscribed"
             >
-              Get notified about updates
-            </TooltipContent>
-          </TooltipRoot>
+              <div
+                class="w-4 h-4 rounded border flex items-center justify-center transition-colors"
+                :class="subscribed ? 'bg-cyan-500 border-cyan-500 text-white' : 'border-current/30'"
+              >
+                <i v-if="subscribed" class="i-lucide-check text-[10px]" />
+              </div>
+              <span>订阅更新</span>
+            </div>
+          </Tooltip>
         </div>
 
         <!-- Slider -->
         <div class="flex flex-col gap-2">
-          <div class="flex justify-between text-sm">
-            <span class="text-white/60">Volume</span>
-            <span class="text-cyan-400 font-mono">{{ sliderVal[0] }}%</span>
+          <div class="flex justify-between text-xs">
+            <span class="opacity-60 flex items-center gap-1">
+              <i class="i-lucide-volume-2 text-xs" /> 音量调节
+            </span>
+            <span class="text-cyan-400 font-mono font-bold">{{ sliderVal[0] }}%</span>
           </div>
-          <SliderRoot
-            v-model="sliderVal"
-            :max="100"
-            :step="1"
-            class="relative flex items-center select-none touch-none h-5 w-full"
-          >
-            <SliderTrack class="relative grow h-1.5 rounded-full bg-white/10">
-              <SliderRange class="absolute h-full rounded-full bg-gradient-to-r from-cyan-400 to-violet-400" />
-            </SliderTrack>
-            <SliderThumb
-              class="block w-4 h-4 bg-white rounded-full shadow-lg hover:scale-125 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 transition-transform"
-            />
-          </SliderRoot>
+          <Slider v-model="sliderVal" :max="100" :step="1" />
         </div>
 
         <!-- Progress -->
         <div class="flex flex-col gap-2">
-          <div class="flex justify-between text-sm">
-            <span class="text-white/60">Progress</span>
-            <span class="text-emerald-400 font-mono">{{ progress }}%</span>
+          <div class="flex justify-between text-xs">
+            <span class="opacity-60 flex items-center gap-1">
+              <i class="i-lucide-activity text-xs" /> 任务进度
+            </span>
+            <span class="text-emerald-400 font-mono font-bold">{{ progress }}%</span>
           </div>
-          <ProgressRoot
-            :model-value="progress"
-            class="relative overflow-hidden h-3 rounded-full bg-white/10"
-          >
-            <div
-              class="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 transition-all duration-200"
-              :style="{ width: `${progress}%` }"
-            />
-          </ProgressRoot>
-          <button
-            class="self-start px-3 py-1 text-xs rounded-md bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white/80 transition-all cursor-pointer"
-            @click="animateProgress"
-          >
-            Replay
-          </button>
+          <Progress :model-value="progress" />
+          <Button variant="secondary" size="sm" class="self-start text-xs h-7 px-2.5" @click="animateProgress">
+            <i class="i-lucide-rotate-ccw text-xs" />
+            重放动画
+          </Button>
         </div>
 
         <!-- Toggle Group -->
-        <div class="flex flex-col gap-2">
-          <span class="text-sm text-white/60">Alignment</span>
+        <div class="flex flex-col gap-1.5">
+          <span class="text-xs opacity-60">布局对齐</span>
           <ToggleGroupRoot
             v-model="toggleVal"
             type="single"
-            class="inline-flex rounded-lg bg-white/5 border border-white/10 overflow-hidden"
+            class="inline-flex rounded-lg border border-current/10 bg-current/5 overflow-hidden p-0.5"
           >
             <ToggleGroupItem
               value="left"
-              class="px-4 py-2 text-sm text-white/50 hover:bg-white/10 data-[state=on]:bg-violet-500/30 data-[state=on]:text-violet-400 transition-colors"
+              class="flex-1 py-1.5 text-xs opacity-60 hover:opacity-100 data-[state=on]:bg-violet-500/25 data-[state=on]:text-violet-400 data-[state=on]:opacity-100 rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer"
             >
-              Left
+              <i class="i-lucide-align-left text-xs" /> 左对齐
             </ToggleGroupItem>
             <ToggleGroupItem
               value="center"
-              class="px-4 py-2 text-sm text-white/50 hover:bg-white/10 data-[state=on]:bg-violet-500/30 data-[state=on]:text-violet-400 transition-colors border-x border-white/10"
+              class="flex-1 py-1.5 text-xs opacity-60 hover:opacity-100 data-[state=on]:bg-violet-500/25 data-[state=on]:text-violet-400 data-[state=on]:opacity-100 rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer"
             >
-              Center
+              <i class="i-lucide-align-center text-xs" /> 居中
             </ToggleGroupItem>
             <ToggleGroupItem
               value="right"
-              class="px-4 py-2 text-sm text-white/50 hover:bg-white/10 data-[state=on]:bg-violet-500/30 data-[state=on]:text-violet-400 transition-colors"
+              class="flex-1 py-1.5 text-xs opacity-60 hover:opacity-100 data-[state=on]:bg-violet-500/25 data-[state=on]:text-violet-400 data-[state=on]:opacity-100 rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer"
             >
-              Right
+              <i class="i-lucide-align-right text-xs" /> 右对齐
             </ToggleGroupItem>
           </ToggleGroupRoot>
         </div>
 
         <!-- Tabs -->
         <TabsRoot default-value="code" class="w-full">
-          <TabsList class="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10">
+          <TabsList class="flex gap-1 p-1 rounded-lg bg-current/5 border border-current/10">
             <TabsTrigger
               value="code"
-              class="flex-1 px-4 py-2 text-sm rounded-md text-white/50 data-[state=active]:bg-white/10 data-[state=active]:text-white font-medium transition-all"
+              class="flex-1 px-3 py-1.5 text-xs rounded-md opacity-60 data-[state=active]:bg-current/10 data-[state=active]:opacity-100 font-medium transition-all cursor-pointer"
             >
-              Code
+              代码
             </TabsTrigger>
             <TabsTrigger
               value="preview"
-              class="flex-1 px-4 py-2 text-sm rounded-md text-white/50 data-[state=active]:bg-white/10 data-[state=active]:text-white font-medium transition-all"
+              class="flex-1 px-3 py-1.5 text-xs rounded-md opacity-60 data-[state=active]:bg-current/10 data-[state=active]:opacity-100 font-medium transition-all cursor-pointer"
             >
-              Preview
+              预览
             </TabsTrigger>
             <TabsTrigger
               value="output"
-              class="flex-1 px-4 py-2 text-sm rounded-md text-white/50 data-[state=active]:bg-white/10 data-[state=active]:text-white font-medium transition-all"
+              class="flex-1 px-3 py-1.5 text-xs rounded-md opacity-60 data-[state=active]:bg-current/10 data-[state=active]:opacity-100 font-medium transition-all cursor-pointer"
             >
-              Output
+              构建
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="code" class="mt-3">
-            <pre class="p-4 rounded-lg bg-zinc-800 border border-white/5 text-sm font-mono text-emerald-400 overflow-x-auto"><code>import { ref } from 'vue'
-const msg = ref('Hello UnoCSS!')</code></pre>
+          <TabsContent value="code" class="mt-2.5">
+            <pre class="p-3 rounded-lg bg-zinc-800/80 border border-white/10 text-xs font-mono text-emerald-400 overflow-x-auto"><code>import { useDark } from '@vueuse/core';
+const isDark = useDark();</code></pre>
           </TabsContent>
 
-          <TabsContent value="preview" class="mt-3">
-            <div class="p-4 rounded-lg bg-zinc-800 border border-white/5 text-sm text-white/70">
-              <p class="text-emerald-400 font-medium">Hello UnoCSS!</p>
-              <p class="mt-2 text-white/40">Live preview renders here...</p>
+          <TabsContent value="preview" class="mt-2.5">
+            <div class="p-3 rounded-lg bg-current/5 border border-current/10 text-xs opacity-80 leading-relaxed">
+              <p class="text-emerald-400 font-medium">✨ UnoCSS + Reka UI 运行正常</p>
+              <p class="mt-1 opacity-60">零 CSS 文件冲突，支持 Shadow DOM 隔离与热重载。</p>
             </div>
           </TabsContent>
 
-          <TabsContent value="output" class="mt-3">
-            <div class="p-4 rounded-lg bg-zinc-800 border border-white/5 text-sm text-white/70 font-mono">
-              <p class="text-cyan-400">Build: <span class="text-white/60">success</span></p>
-              <p class="text-cyan-400">Time: <span class="text-white/60">42ms</span></p>
-              <p class="text-cyan-400">Size: <span class="text-white/60">1.2kB</span></p>
+          <TabsContent value="output" class="mt-2.5">
+            <div class="p-3 rounded-lg bg-current/5 border border-current/10 text-xs font-mono opacity-80 flex flex-col gap-1">
+              <p class="text-cyan-400">Vite: <span class="opacity-70">8.3.2</span></p>
+              <p class="text-cyan-400">UnoCSS: <span class="opacity-70">v66 (presetWind3)</span></p>
+              <p class="text-cyan-400">Manifest: <span class="opacity-70">Chrome MV3</span></p>
             </div>
           </TabsContent>
         </TabsRoot>
 
         <!-- Accordion -->
-        <AccordionRoot type="single" collapsible class="w-full rounded-lg border border-white/10 overflow-hidden">
-          <AccordionItem value="item-1" class="border-b border-white/10">
-            <AccordionTrigger class="w-full px-4 py-3 flex items-center justify-between text-sm text-white/70 hover:bg-white/5 transition-colors">
-              What is UnoCSS?
-            </AccordionTrigger>
-            <AccordionContent class="px-4 pb-3 text-sm text-white/50 leading-relaxed">
-              UnoCSS is an instant atomic CSS engine. Flexible and extensible, everything via presets.
-            </AccordionContent>
+        <AccordionRoot type="single" collapsible class="w-full rounded-xl border border-current/10 overflow-hidden">
+          <AccordionItem value="item-1" title="什么是 UnoCSS？">
+            UnoCSS 是即时按需原子 CSS 引擎。支持 presetWind3、presetIcons、presetAttributify 与预设转换器。
           </AccordionItem>
-          <AccordionItem value="item-2" class="border-b border-white/10">
-            <AccordionTrigger class="w-full px-4 py-3 flex items-center justify-between text-sm text-white/70 hover:bg-white/5 transition-colors">
-              Why Reka UI?
-            </AccordionTrigger>
-            <AccordionContent class="px-4 pb-3 text-sm text-white/50 leading-relaxed">
-              Unstyled accessible primitives. Pair with UnoCSS for full styling control.
-            </AccordionContent>
+          <AccordionItem value="item-2" title="为什么封装 Reka UI？">
+            Reka UI（原 Radix Vue）提供完全无样式的底层原语与键盘无障碍导航，通过 components/ui 封装后开箱即用。
           </AccordionItem>
-          <AccordionItem value="item-3">
-            <AccordionTrigger class="w-full px-4 py-3 flex items-center justify-between text-sm text-white/70 hover:bg-white/5 transition-colors">
-              How does WXT integrate?
-            </AccordionTrigger>
-            <AccordionContent class="px-4 pb-3 text-sm text-white/50 leading-relaxed">
-              WXT's <code class="px-1.5 py-0.5 rounded bg-white/10 text-cyan-400/80">@wxt-dev/unocss</code> module auto-configures UnoCSS.
-            </AccordionContent>
+          <AccordionItem value="item-3" title="如何防止扩展样式污染宿主网页？">
+            在 entrypoints/content.ts 中通过 WXT 的 createShadowRootUi 隔离挂载，彻底避免全局样式冲突。
           </AccordionItem>
         </AccordionRoot>
 
-        <!-- Dialog -->
+        <!-- Dialog Demo -->
         <DialogRoot>
-          <DialogTrigger
-            class="w-full px-4 py-2.5 rounded-lg bg-gradient-to-r from-violet-500/20 to-cyan-500/20 text-violet-300 border border-violet-500/30 font-medium hover:from-violet-500/30 hover:to-cyan-500/30 transition-all cursor-pointer"
-          >
-            Open Demo Dialog
+          <DialogTrigger as-child>
+            <Button variant="default" class="w-full py-2.5 bg-gradient-to-r from-violet-500/20 to-cyan-500/20 text-violet-300 border-violet-500/30 hover:from-violet-500/30 hover:to-cyan-500/30">
+              <i class="i-lucide-external-link text-sm" />
+              打开演示对话框
+            </Button>
           </DialogTrigger>
-          <DialogContent
-            class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-90 p-6 rounded-2xl bg-zinc-800 border border-white/10 shadow-2xl shadow-black/50"
-          >
-            <DialogTitle class="text-lg font-bold text-white">Confirm Action</DialogTitle>
-            <DialogDescription class="mt-2 text-sm text-white/50">
-              This is a demo dialog styled with UnoCSS and powered by Reka UI. It handles focus trapping and keyboard events automatically.
+          <DialogContent>
+            <DialogTitle class="text-base font-bold text-white flex items-center gap-2">
+              <i class="i-lucide-shield-check text-emerald-400" />
+              操作确认
+            </DialogTitle>
+            <DialogDescription class="mt-2 text-xs text-white/60 leading-relaxed">
+              这是基于 Reka UI + UnoCSS 封装的弹窗组件，已自动处理全局蒙层、焦点捕获 (Focus Trap) 与 Esc 键盘事件。
             </DialogDescription>
-            <div class="flex justify-end gap-3 mt-6">
-              <DialogClose
-                class="px-4 py-2 text-sm rounded-lg text-white/60 hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                Cancel
+            <div class="flex justify-end gap-2.5 mt-5">
+              <DialogClose as-child>
+                <Button variant="ghost" size="sm">取消</Button>
               </DialogClose>
-              <DialogClose
-                class="px-4 py-2 text-sm rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors cursor-pointer"
-              >
-                Confirm
+              <DialogClose as-child>
+                <Button variant="default" size="sm">确认提交</Button>
               </DialogClose>
             </div>
           </DialogContent>
@@ -303,8 +255,8 @@ const msg = ref('Hello UnoCSS!')</code></pre>
       </div>
 
       <!-- Footer -->
-      <p class="text-xs text-white/20">
-        Edit <code class="px-1.5 py-0.5 rounded bg-white/5 text-white/30">App.vue</code> to test HMR
+      <p class="text-[11px] opacity-30 text-center">
+        WXT Vue Template • 支持 HMR 实时热更
       </p>
     </div>
   </TooltipProvider>

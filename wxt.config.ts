@@ -6,6 +6,9 @@ export default defineConfig({
   unocss: {
     excludeEntrypoints: ['background'],
   },
+  manifest: {
+    permissions: ['storage'],
+  },
   webExt: {
     chromiumArgs: ['--user-data-dir=./.wxt/chrome-data'],
     openDevtools: true,
