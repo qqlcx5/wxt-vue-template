@@ -215,25 +215,30 @@ export default defineContentScript({
 
 ## 8. 通用 AI 流式中枢引擎 (`services/ai.ts`)
 
-封装了基于 `eventsource-parser` 的通用 SSE 流式大模型调用器，不绑定任何单一模型或业务场景，跨模型适配 **OpenAI、DeepSeek、Claude、Gemini 以及本地 Ollama (localhost:11434)**，自带打字机输出、主动中断 (`AbortController`)、指数退避重试 (429/503) 与 Token 消耗预估。
+封装了基于 `eventsource-parser` 的通用 SSE 流式大模型调用器，遵循开放标准的 `POST /v1/chat/completions` 协议。零第三方 SDK 依赖，支持 **DeepSeek、OpenAI、通义千问、Kimi、SiliconFlow 以及本地 Ollama (localhost:11434)**，自带打字机输出、思维链推理捕获、主动中断 (`AbortController`)、指数退避重试 (429/503) 与 Base URL 智能标准化。
 
 ### 1. 通用流式调用 `streamChat`
 ```typescript
 import { streamChat } from '@/services/ai';
 
 const handle = streamChat({
-  model: 'gpt-6.1-sol', // 或 'deepseek', 'claude35', 'gemini15', 'ollama'
+  model: 'gpt-6.1-sol', // 或 'deepseek-chat', 'deepseek-reasoner', 'qwen-plus'
   messages: [
     { role: 'system', content: '你是一位资深技术专家。' },
     { role: 'user', content: '请解释什么是 Manifest V3。' },
   ],
+  // 普通文字增量输出
   onChunk: (delta, accumulated) => {
     console.log('当前流式切片:', delta);
     console.log('累积文本:', accumulated);
   },
+  // 思考过程 / 思维链捕获 (支持 DeepSeek-R1 / Qwen 等思考型模型)
+  onReasoningChunk: (deltaReasoning, accumulatedReasoning) => {
+    console.log('深度思考中:', deltaReasoning);
+  },
   onFinish: (fullText, stats) => {
     console.log('生成完成:', fullText);
-    console.log('Token 统计:', stats.estimatedTokens);
+    console.log('Token 统计:', stats.totalTokens);
   },
   onError: (err) => {
     console.error('调用出错:', err.message);
@@ -244,10 +249,9 @@ const handle = streamChat({
 // handle.abort();
 ```
 
-### 2. 多服务商体系与动态模型探测 (`types/ai.ts` & `services/ai.ts`)
-脚手架开箱支持 **自定义网关、OpenAI、DeepSeek、Claude、Gemini、Ollama、OpenRouter、硅基流动、Kimi** 等服务商独立并行管理：
+### 2. 连通性测试与动态模型探测 (`services/ai.ts`)
 ```typescript
-import { testProviderConnection, fetchRemoteModels } from '@/services/ai';
+import { testProviderConnection, fetchRemoteModels, normalizeBaseUrl } from '@/services/ai';
 
 // 1. 服务商连通性与 Ping 延时测试
 const pingRes = await testProviderConnection('custom', 'gpt-6.1-sol');
