@@ -96,10 +96,14 @@ export function onMessage<K extends ActionName>(
   ) => Promise<ExtensionProtocol[K]['response']> | ExtensionProtocol[K]['response'],
 ): () => void {
   const browser = getBrowser();
+  const normalize = (val: any) =>
+    typeof val === 'string' ? val.toLowerCase().replace(/[-_]/g, '') : '';
+  const targetNorm = normalize(action);
+
   const listener = (message: any, sender: any, sendResponse: (res: any) => void) => {
-    // 兼容 action 或 type 命名
+    // 兼容 action 或 type 命名，以及大小写/横杠下划线规范
     const msgAction = message?.action || message?.type;
-    if (msgAction === action) {
+    if (msgAction === action || (msgAction && normalize(msgAction) === targetNorm)) {
       Promise.resolve(handler(message.data, sender))
         .then((res) => {
           sendResponse(res);

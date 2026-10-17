@@ -58,7 +58,7 @@ const chatMessages = ref<ChatMessageItem[]>([
   {
     id: 'welcome',
     role: 'assistant',
-    content: '你好！我是你的专属 AI 智能工作台助手，已挂载 **gpt-6.1-sol** 高性能推理通道。\n\n你可以随时向我提问，或点击下方快捷胶囊对当前网页进行深度提炼、代码审查与翻译。',
+    content: `你好！我是你的专属 AI 智能工作台助手，已挂载 **${settingsStore.selectedModel || 'gpt-6.1-sol'}** 通用推理通道。\n\n你可以随时向我提问，或点击下方快捷胶囊对当前网页进行深度提炼、代码审查与翻译。`,
     timestamp: Date.now(),
   },
 ]);

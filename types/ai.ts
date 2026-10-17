@@ -1,5 +1,5 @@
 export interface AiModelConfig {
-  id: string; // e.g. 'gpt-6.1-sol', 'gpt-4o'
+  id: string; // e.g. 'gpt-6.1-sol', 'gpt-6.1-sol'
   name: string; // e.g. 'GPT-6.1-Sol (专属推理引擎)'
   providerId: string; // e.g. 'custom', 'openai', 'deepseek'
   contextLength?: number; // e.g. 128000

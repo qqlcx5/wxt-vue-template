@@ -10,127 +10,19 @@ import type {
 export const defaultProviders: AiProviderConfig[] = [
   {
     id: 'custom',
-    name: '自定义 API 网关 (推荐)',
-    icon: 'i-lucide-server',
-    enabled: true,
-    baseUrl: 'http://66.154.117.189:3000/v1',
-    apiKey: 'sk-gI9BZBbEjHozLBOzBtYKLPJBv7X4oaYJQYXg90rERAgvTM12',
-    models: [
-      { id: 'gpt-6.1-sol', name: 'gpt-6.1-sol (当前专属推理通道)', providerId: 'custom', isCustom: true },
-      { id: 'gpt-4o', name: 'GPT-4o (通用旗舰)', providerId: 'custom' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini (极速轻量)', providerId: 'custom' },
-    ],
-    customHeaders: {},
-    protocol: 'openai',
-  },
-  {
-    id: 'openai',
-    name: 'OpenAI 官方直连',
+    name: '通用 API 兼容接口 (OpenAI Compatible)',
     icon: 'i-lucide-sparkles',
-    enabled: false,
+    enabled: true,
     baseUrl: 'https://api.openai.com/v1',
     apiKey: '',
     models: [
-      { id: 'gpt-4o', name: 'GPT-4o (Omni 旗舰)', providerId: 'openai' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini (高性价比)', providerId: 'openai' },
-      { id: 'o1', name: 'o1 (深度推理)', providerId: 'openai' },
-      { id: 'o3-mini', name: 'o3-mini (轻量推理)', providerId: 'openai' },
+      { id: 'gpt-6.1-sol', name: 'gpt-6.1-sol (通用旗舰)', providerId: 'custom' },
+      { id: 'gpt-6.1-sol-mini', name: 'gpt-6.1-sol Mini (极速轻量)', providerId: 'custom' },
+      { id: 'deepseek-chat', name: 'DeepSeek-V3 (深度求索)', providerId: 'custom' },
+      { id: 'deepseek-reasoner', name: 'DeepSeek-R1 (深度思维链)', providerId: 'custom' },
+      { id: 'qwen-plus', name: '通义千问 Plus (阿里云百炼)', providerId: 'custom' },
     ],
-    protocol: 'openai',
-  },
-  {
-    id: 'deepseek',
-    name: 'DeepSeek (深度求索)',
-    icon: 'i-lucide-cpu',
-    enabled: false,
-    baseUrl: 'https://api.deepseek.com/v1',
-    apiKey: '',
-    models: [
-      { id: 'deepseek-chat', name: 'DeepSeek-V3 (通用大模型)', providerId: 'deepseek' },
-      { id: 'deepseek-reasoner', name: 'DeepSeek-R1 (深度思维链推理)', providerId: 'deepseek' },
-    ],
-    protocol: 'openai',
-  },
-  {
-    id: 'claude',
-    name: 'Anthropic Claude',
-    icon: 'i-lucide-bot',
-    enabled: false,
-    baseUrl: 'https://api.anthropic.com/v1',
-    apiKey: '',
-    models: [
-      { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet (编程与逻辑最强)', providerId: 'claude' },
-      { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku (极致极速)', providerId: 'claude' },
-    ],
-    protocol: 'openai',
-  },
-  {
-    id: 'gemini',
-    name: 'Google Gemini',
-    icon: 'i-lucide-layers',
-    enabled: false,
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    apiKey: '',
-    models: [
-      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (超长两百万上下文)', providerId: 'gemini' },
-      { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash (新一代多模态极速)', providerId: 'gemini' },
-    ],
-    protocol: 'openai',
-  },
-  {
-    id: 'ollama',
-    name: 'Ollama 本地离线引擎',
-    icon: 'i-lucide-hard-drive',
-    enabled: false,
-    baseUrl: 'http://localhost:11434/v1',
-    apiKey: 'ollama',
-    models: [
-      { id: 'llama3.2', name: 'Llama 3.2 (本地通用)', providerId: 'ollama' },
-      { id: 'deepseek-r1:8b', name: 'DeepSeek-R1:8B (本地推理)', providerId: 'ollama' },
-      { id: 'qwen2.5:7b', name: 'Qwen 2.5:7B (中文最强)', providerId: 'ollama' },
-    ],
-    protocol: 'openai',
-  },
-  {
-    id: 'openrouter',
-    name: 'OpenRouter (一站聚合)',
-    icon: 'i-lucide-network',
-    enabled: false,
-    baseUrl: 'https://openrouter.ai/api/v1',
-    apiKey: '',
-    models: [
-      { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet (via OpenRouter)', providerId: 'openrouter' },
-      { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash (Free Tier)', providerId: 'openrouter' },
-      { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1 (via OpenRouter)', providerId: 'openrouter' },
-    ],
-    protocol: 'openai',
-  },
-  {
-    id: 'siliconflow',
-    name: 'SiliconFlow (硅基流动)',
-    icon: 'i-lucide-zap',
-    enabled: false,
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    apiKey: '',
-    models: [
-      { id: 'deepseek-ai/DeepSeek-V3', name: 'DeepSeek V3 (硅基高吞吐)', providerId: 'siliconflow' },
-      { id: 'deepseek-ai/DeepSeek-R1', name: 'DeepSeek R1 (硅基推理版)', providerId: 'siliconflow' },
-      { id: 'Qwen/Qwen2.5-72B-Instruct', name: 'Qwen2.5-72B (千问旗舰)', providerId: 'siliconflow' },
-    ],
-    protocol: 'openai',
-  },
-  {
-    id: 'moonshot',
-    name: 'Moonshot AI (Kimi)',
-    icon: 'i-lucide-moon',
-    enabled: false,
-    baseUrl: 'https://api.moonshot.cn/v1',
-    apiKey: '',
-    models: [
-      { id: 'moonshot-v1-8k', name: 'Moonshot v1 8K', providerId: 'moonshot' },
-      { id: 'moonshot-v1-32k', name: 'Moonshot v1 32K', providerId: 'moonshot' },
-      { id: 'moonshot-v1-128k', name: 'Moonshot v1 128K (长文本)', providerId: 'moonshot' },
-    ],
+    customHeaders: {},
     protocol: 'openai',
   },
 ];
@@ -216,16 +108,16 @@ export const useSettingsStore = defineStore('settings', {
     showBadge: true,
     selectedModel: 'gpt-6.1-sol',
     memoNote: '这是一个支持跨 Popup、SidePanel、Options 即时双向持久化同步的随手速记便笺。',
-    openaiKey: 'sk-gI9BZBbEjHozLBOzBtYKLPJBv7X4oaYJQYXg90rERAgvTM12',
+    openaiKey: '',
     deepseekKey: '',
-    customEndpoint: 'http://66.154.117.189:3000/v1',
+    customEndpoint: 'https://api.openai.com/v1',
     temperature: 0.7,
     systemPrompt: '你是一位严谨专业、富有洞察力的智能助手。请使用专业、简洁、清晰的 Markdown 格式回答用户的问题。在分析问题时条理分明，优先给出最核心的结论与行动建议。',
     providers: defaultProviders,
     inferenceParams: {
-      temperature: 1,
+      temperature: 0.7,
       topP: 1.0,
-      maxTokens: 128000,
+      maxTokens: 4096,
       presencePenalty: 0.0,
       frequencyPenalty: 0.0,
       contextRounds: 6,
@@ -245,26 +137,26 @@ export const useSettingsStore = defineStore('settings', {
     // 获取当前所有已启用服务商下的可用模型平面列表（供所有 Select 下拉组件使用）
     availableModels(state) {
       const list: { label: string; value: string; providerName: string; providerId: string; icon: string }[] = [];
-      const enabledProviders = state.providers.filter((p) => p.enabled);
+      const enabledProviders = (state.providers || []).filter((p) => p.enabled);
       for (const p of enabledProviders) {
-        for (const m of p.models) {
+        for (const m of (p.models || [])) {
           list.push({
             label: `${m.name} (${p.name.split(' ')[0]})`,
             value: m.id,
             providerName: p.name,
             providerId: p.id,
-            icon: p.icon,
+            icon: p.icon || 'i-lucide-sparkles',
           });
         }
       }
-      // 容错：若没有启用任何服务商，保底提供默认 gpt-6.1-sol
+      // 容错：若没有可用模型，保底提供默认 gpt-6.1-sol
       if (list.length === 0) {
         list.push({
-          label: 'gpt-6.1-sol (专属网关)',
+          label: 'gpt-6.1-sol (通用旗舰)',
           value: 'gpt-6.1-sol',
-          providerName: '自定义 API 网关',
+          providerName: '通用 API 兼容接口',
           providerId: 'custom',
-          icon: 'i-lucide-server',
+          icon: 'i-lucide-sparkles',
         });
       }
       return list;
@@ -371,6 +263,24 @@ export const useSettingsStore = defineStore('settings', {
         this.systemPrompt = defaultSystemPromptPresets[0]?.prompt ?? '';
       }
     },
+    // 清洗旧版冗余的多厂商列表，收敛为标准的通用 API 兼容接口
+    cleanLegacyProviders() {
+      if (
+        this.providers &&
+        this.providers.length > 1 &&
+        this.providers.some((p) => p.id === 'moonshot' || p.id === 'siliconflow' || p.id === 'claude' || p.id === 'gemini')
+      ) {
+        const custom = this.providers.find((p) => p.id === 'custom');
+        if (custom) {
+          this.providers = [custom];
+        } else {
+          this.providers = JSON.parse(JSON.stringify(defaultProviders));
+        }
+      }
+      if (!this.providers || this.providers.length === 0) {
+        this.providers = JSON.parse(JSON.stringify(defaultProviders));
+      }
+    },
     resetSettings() {
       this.theme = 'light';
       this.autoSync = true;
@@ -380,14 +290,14 @@ export const useSettingsStore = defineStore('settings', {
       this.selectedModel = 'gpt-6.1-sol';
       this.openaiKey = 'sk-gI9BZBbEjHozLBOzBtYKLPJBv7X4oaYJQYXg90rERAgvTM12';
       this.deepseekKey = '';
-      this.customEndpoint = 'http://66.154.117.189:3000/v1';
+      this.customEndpoint = 'https://api.openai.com/v1';
       this.temperature = 0.7;
       this.systemPrompt = defaultSystemPromptPresets[0]?.prompt ?? '';
-      this.providers = defaultProviders;
+      this.providers = JSON.parse(JSON.stringify(defaultProviders));
       this.inferenceParams = {
         temperature: 0.7,
         topP: 1.0,
-        maxTokens: 128000,
+        maxTokens: 4096,
         presencePenalty: 0.0,
         frequencyPenalty: 0.0,
         contextRounds: 6,

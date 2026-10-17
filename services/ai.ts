@@ -32,6 +32,7 @@ export interface StreamChatOptions {
   customHeaders?: Record<string, string>;
   signal?: AbortSignal;
   onChunk?: (delta: string, accumulated: string) => void;
+  onReasoningChunk?: (delta: string, accumulated: string) => void;
   onFinish?: (fullText: string, stats: TokenStats) => void;
   onError?: (error: Error) => void;
 }
@@ -51,6 +52,27 @@ export interface ResolvedAiConfig {
 }
 
 /**
+ * 标准化 Base URL：自动剔除末尾斜杠、移除可能误加的 /chat/completions，并智能补齐网络协议
+ */
+export function normalizeBaseUrl(url?: string): string {
+  if (!url) return '';
+  let clean = url.trim().replace(/\/+$/, '');
+  // 如果用户误填了完整路径 /chat/completions，自动移除
+  if (clean.endsWith('/chat/completions')) {
+    clean = clean.replace(/\/chat\/completions$/, '');
+  }
+  // 如果没有写协议且非相对路径，自动补全协议
+  if (!/^https?:\/\//i.test(clean) && !clean.startsWith('/')) {
+    if (clean.includes('localhost') || clean.includes('127.0.0.1')) {
+      clean = `http://${clean}`;
+    } else {
+      clean = `https://${clean}`;
+    }
+  }
+  return clean;
+}
+
+/**
  * 估算文本大致 Token 数量（中英混合约 2.5 - 3.5 字符 / Token）
  */
 function estimateTokens(text: string): number {
@@ -64,7 +86,44 @@ function estimateTokens(text: string): number {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * 获取完整 API 与推理配置（兼容多服务商路由、场景路由、Pinia 与 Background 环境）
+ * 安全获取当前扩展设置（兼容 Pinia、Background Service Worker、Content Script 与测试环境）
+ */
+async function getStoredSettings(): Promise<any> {
+  try {
+    const store = useSettingsStore();
+    return {
+      model: store.selectedModel,
+      selectedModel: store.selectedModel,
+      openaiKey: store.openaiKey,
+      deepseekKey: store.deepseekKey,
+      endpoint: store.customEndpoint,
+      customEndpoint: store.customEndpoint,
+      providers: store.providers,
+      inferenceParams: store.inferenceParams,
+      featureRouting: store.featureRouting,
+    };
+  } catch { }
+
+  const g = globalThis as any;
+  const storageApi =
+    (typeof browser !== 'undefined' && browser?.storage) ||
+    g?.browser?.storage ||
+    g?.chrome?.storage;
+
+  if (storageApi?.local) {
+    try {
+      const local = await storageApi.local.get('settings');
+      if (local?.settings) {
+        return typeof local.settings === 'string' ? JSON.parse(local.settings) : local.settings;
+      }
+    } catch { }
+  }
+
+  return {};
+}
+
+/**
+ * 获取完整 API 与推理配置（统一兼容 OpenAI Chat Completions 规范）
  */
 export async function resolveApiConfig(
   customModel?: string,
@@ -72,26 +131,7 @@ export async function resolveApiConfig(
   customEndpoint?: string,
   feature?: 'chatStudio' | 'sidepanel' | 'selection' | 'summary',
 ): Promise<ResolvedAiConfig> {
-  let settings: any = {};
-  try {
-    const store = useSettingsStore();
-    settings = {
-      model: store.selectedModel,
-      openaiKey: store.openaiKey,
-      deepseekKey: store.deepseekKey,
-      endpoint: store.customEndpoint,
-      providers: store.providers,
-      inferenceParams: store.inferenceParams,
-      featureRouting: store.featureRouting,
-    };
-  } catch {
-    const local = await browser.storage.local.get('settings');
-    if (local?.settings) {
-      try {
-        settings = typeof local.settings === 'string' ? JSON.parse(local.settings) : local.settings;
-      } catch {}
-    }
-  }
+  const settings = await getStoredSettings();
 
   const providers: AiProviderConfig[] = settings.providers || [];
   const inferenceParams: AiInferenceParameters = settings.inferenceParams || {
@@ -111,7 +151,7 @@ export async function resolveApiConfig(
     const routingKey = `${feature}Model` as keyof typeof settings.featureRouting;
     targetModel = settings.featureRouting[routingKey];
   }
-  const finalModel: string = targetModel || settings.model || 'gpt-6.1-sol';
+  const finalModel: string = targetModel || settings.selectedModel || settings.model || 'gpt-6.1-sol';
 
   // 2. 根据模型寻址对应的 Provider
   let matchedProvider: AiProviderConfig | undefined;
@@ -128,26 +168,19 @@ export async function resolveApiConfig(
       models: [{ id: finalModel, name: finalModel, providerId: 'adhoc' }],
     };
   } else {
-    // 遍历所有已启用的服务商，匹配模型列表
-    matchedProvider = providers
-      .filter((p) => p.enabled)
-      .find((p) => p.models.some((m) => m.id === finalModel));
-
-    // 若未在启用服务商的模型列表中找到，优先选用自定义服务商 (custom) 或首个启用的服务商
-    if (!matchedProvider) {
-      matchedProvider =
-        providers.find((p) => p.id === 'custom' && p.enabled) ||
-        providers.find((p) => p.enabled) ||
-        providers[0];
-    }
+    // 优先选用包含目标模型的已启用服务商，或默认的通用服务商
+    matchedProvider =
+      providers.find((p) => p.enabled && p.models?.some((m) => m.id === finalModel)) ||
+      providers.find((p) => p.id === 'custom' && p.enabled) ||
+      providers.find((p) => p.enabled) ||
+      providers[0];
   }
 
-  // 3. 解析端点、密钥与自定义请求头
-  let baseURL = customEndpoint || matchedProvider?.baseUrl || settings.endpoint || 'http://66.154.117.189:3000/v1';
-  let apiKey = customKey || matchedProvider?.apiKey || settings.openaiKey || 'sk-gI9BZBbEjHozLBOzBtYKLPJBv7X4oaYJQYXg90rERAgvTM12';
+  // 3. 解析端点、密钥与自定义请求头（执行 URL 智能清洗）
+  let rawBase = customEndpoint || matchedProvider?.baseUrl || settings.endpoint || settings.customEndpoint || 'https://api.openai.com/v1';
+  let baseURL = normalizeBaseUrl(rawBase);
+  let apiKey = customKey || matchedProvider?.apiKey || settings.openaiKey || '';
   const customHeaders = { ...(matchedProvider?.customHeaders || {}) };
-
-  baseURL = baseURL.replace(/\/+$/, '');
 
   return {
     model: finalModel,
@@ -165,24 +198,13 @@ export async function resolveApiConfig(
 export async function fetchRemoteModels(
   providerId: string,
 ): Promise<{ success: boolean; models: string[]; error?: string }> {
-  let settings: any = {};
-  try {
-    const store = useSettingsStore();
-    settings = store.$state;
-  } catch {
-    const local = await browser.storage.local.get('settings');
-    if (local?.settings) {
-      try {
-        settings = typeof local.settings === 'string' ? JSON.parse(local.settings) : local.settings;
-      } catch {}
-    }
-  }
+  const settings = await getStoredSettings();
 
-  const provider = settings.providers?.find((p: any) => p.id === providerId);
+  const provider = settings.providers?.find((p: any) => p.id === providerId) || settings.providers?.[0];
   if (!provider) return { success: false, models: [], error: '未找到该服务商配置' };
   if (!provider.baseUrl) return { success: false, models: [], error: '该服务商未配置 Base URL' };
 
-  const baseURL = provider.baseUrl.replace(/\/+$/, '');
+  const baseURL = normalizeBaseUrl(provider.baseUrl);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 12000);
 
@@ -208,9 +230,9 @@ export async function fetchRemoteModels(
     }
 
     const data = await res.json();
-    const rawList = Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : [];
+    const rawList = Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : (data.models || []);
     const models = rawList
-      .map((item: any) => (typeof item === 'string' ? item : item.id))
+      .map((item: any) => (typeof item === 'string' ? item : item.id || item.name))
       .filter(Boolean) as string[];
 
     return { success: true, models };
@@ -228,26 +250,15 @@ export async function testProviderConnection(
   modelId?: string,
 ): Promise<{ success: boolean; latencyMs: number; reply?: string; error?: string }> {
   const startTime = Date.now();
-  let settings: any = {};
-  try {
-    const store = useSettingsStore();
-    settings = store.$state;
-  } catch {
-    const local = await browser.storage.local.get('settings');
-    if (local?.settings) {
-      try {
-        settings = typeof local.settings === 'string' ? JSON.parse(local.settings) : local.settings;
-      } catch {}
-    }
-  }
+  const settings = await getStoredSettings();
 
-  const provider = settings.providers?.find((p: any) => p.id === providerId);
+  const provider = settings.providers?.find((p: any) => p.id === providerId) || settings.providers?.[0];
   if (!provider) {
     return { success: false, latencyMs: 0, error: '未找到服务商配置' };
   }
 
   const model = modelId || provider.models?.[0]?.id || 'gpt-6.1-sol';
-  const baseURL = provider.baseUrl.replace(/\/+$/, '');
+  const baseURL = normalizeBaseUrl(provider.baseUrl);
   const apiKey = provider.apiKey;
 
   try {
@@ -288,7 +299,7 @@ export async function testProviderConnection(
 }
 
 /**
- * 测试 AI 服务连通性 (兼容旧版调用)
+ * 测试 AI 服务连通性 (兼容通用调用)
  */
 export async function testAiConnection(
   customModel?: string,
@@ -335,7 +346,7 @@ export async function testAiConnection(
 }
 
 /**
- * 通用 SSE 流式大模型调用引擎（集成多服务商、场景路由、历史对话截断、全参数调优与指数退避重试）
+ * 通用 SSE 流式大模型调用引擎（遵循标准 OpenAI Chat Completions 规范与思维链扩展）
  */
 export function streamChat(options: StreamChatOptions): StreamChatHandle {
   const controller = new AbortController();
@@ -344,6 +355,7 @@ export function streamChat(options: StreamChatOptions): StreamChatHandle {
 
   const promise = new Promise<string>(async (resolve, reject) => {
     let accumulated = '';
+    let accumulatedReasoning = '';
     let serverStats: TokenStats | null = null;
     let attempt = 0;
 
@@ -361,11 +373,12 @@ export function streamChat(options: StreamChatOptions): StreamChatHandle {
           options.feature,
         );
 
-        if (
-          !config.apiKey &&
-          !config.baseURL.includes('localhost') &&
-          !config.baseURL.includes('127.0.0.1')
-        ) {
+        const isLocalOrNoKey =
+          config.baseURL.includes('localhost') ||
+          config.baseURL.includes('127.0.0.1') ||
+          config.baseURL.includes(':11434');
+
+        if (!config.apiKey && !isLocalOrNoKey) {
           throw new Error('未配置 API 密钥，请在扩展【偏好设置 (Options)】中填入 API Key 后重试。');
         }
 
@@ -434,7 +447,7 @@ export function streamChat(options: StreamChatOptions): StreamChatHandle {
           try {
             const errJson = await response.json();
             errMsg = errJson.error?.message || errMsg;
-          } catch {}
+          } catch { }
           throw new Error(errMsg);
         }
 
@@ -466,11 +479,21 @@ export function streamChat(options: StreamChatOptions): StreamChatHandle {
                 parsed.choices?.[0]?.text ||
                 '';
 
+              const reasoning =
+                parsed.choices?.[0]?.delta?.reasoning_content ||
+                parsed.choices?.[0]?.delta?.thought ||
+                '';
+
+              if (reasoning) {
+                accumulatedReasoning += reasoning;
+                options.onReasoningChunk?.(reasoning, accumulatedReasoning);
+              }
+
               if (delta) {
                 accumulated += delta;
                 options.onChunk?.(delta, accumulated);
               }
-            } catch {}
+            } catch { }
           },
         });
 

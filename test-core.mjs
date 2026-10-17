@@ -76,4 +76,18 @@ assert(typeof logger.info === 'function', 'Logger 必须包含 info 方法');
 logger.info('脚手架核心内核初始化完成');
 console.log('✓ 日志记录器验证通过！');
 
-console.log('\n🎉 1-5 项核心能力全套自动化验证 100% 成功！');
+// 6. 测试通用 OpenAI 兼容端点标准化 (Universal AI Normalization)
+console.log('\n6. 测试通用 AI Base URL 智能标准化与配置解析...');
+const { normalizeBaseUrl, resolveApiConfig } = await import('./services/ai.ts');
+assert(normalizeBaseUrl('https://api.openai.com/v1/') === 'https://api.openai.com/v1', '末尾斜杠必须自动移除');
+assert(normalizeBaseUrl('https://api.openai.com/v1/chat/completions') === 'https://api.openai.com/v1', '多余的 /chat/completions 路径必须剥离');
+assert(normalizeBaseUrl('api.deepseek.com/v1') === 'https://api.deepseek.com/v1', '缺少协议必须自动补全 https://');
+assert(normalizeBaseUrl('localhost:11434/v1') === 'http://localhost:11434/v1', '本地服务必须补全 http://');
+console.log('✓ Base URL 容错与协议标准化验证通过！');
+
+const resolved = await resolveApiConfig();
+assert(resolved && resolved.baseURL && resolved.model, '必须解析出标准配置');
+assert(resolved.model === 'gpt-6.1-sol', '默认模型必须为 gpt-6.1-sol');
+console.log('✓ 通用 OpenAI 兼容配置解析验证通过！模型:', resolved.model, '端点:', resolved.baseURL);
+
+console.log('\n🎉 全套核心能力与通用 AI 对接验证 100% 成功！');

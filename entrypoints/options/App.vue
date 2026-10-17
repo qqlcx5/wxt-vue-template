@@ -104,11 +104,30 @@ const testResult = ref<{ success: boolean; latencyMs: number; reply?: string; er
 
 const aiSubTab = ref<'providers' | 'parameters' | 'routing' | 'prompts'>('providers');
 const aiSubTabs = [
-  { value: 'providers', label: '模型服务商 (Providers)' },
+  { value: 'providers', label: '通用 API 对接 (API Endpoint)' },
   { value: 'parameters', label: '推理超参数 (Parameters)' },
   { value: 'routing', label: '场景分流绑定 (Routing)' },
   { value: 'prompts', label: '系统角色词库 (Prompts)' },
 ];
+
+const quickEndpointPresets = [
+  { name: 'DeepSeek', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  { name: 'OpenAI 官方', url: 'https://api.openai.com/v1', model: 'gpt-6.1-sol' },
+  { name: '通义千问 (百炼)', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+  { name: 'SiliconFlow 硅基', url: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3' },
+  { name: 'Ollama 本地', url: 'http://localhost:11434/v1', model: 'llama3.2' },
+  { name: 'OpenRouter 聚合', url: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-3.5-sonnet' },
+];
+
+function applyEndpointPreset(providerId: string, preset: { name: string; url: string; model: string }) {
+  const p = settingsStore.providers.find((item) => item.id === providerId) || settingsStore.providers[0];
+  if (p) {
+    p.baseUrl = preset.url;
+    settingsStore.addCustomModel(p.id, preset.model, preset.model);
+    settingsStore.selectedModel = preset.model;
+    triggerToast(`已快速套用 ${preset.name} 端点 (${preset.model})`, 'success');
+  }
+}
 
 const providerPingStatus = ref<Record<string, { testing: boolean; result?: { success: boolean; latencyMs: number; reply?: string; error?: string } }>>({});
 const providerFetchingModels = ref<Record<string, boolean>>({});
@@ -267,6 +286,7 @@ async function handleClearData() {
 }
 
 onMounted(() => {
+  settingsStore.cleanLegacyProviders();
   articlesStore.loadArticles();
 });
 </script>
@@ -528,6 +548,22 @@ onMounted(() => {
 
           <!-- ================= SUB-TAB 1: 模型服务商 (Providers) ================= -->
           <div v-if="aiSubTab === 'providers'" class="flex flex-col gap-4">
+            <!-- 通用兼容协议说明横幅 -->
+            <div class="p-4 rounded-2xl bg-[#007AFF]/5 dark:bg-[#007AFF]/10 border border-[#007AFF]/20 flex items-start gap-3">
+              <div class="w-8 h-8 rounded-xl bg-[#007AFF]/10 flex items-center justify-center shrink-0 text-[#007AFF] mt-0.5">
+                <i class="i-lucide-sparkles text-base" />
+              </div>
+              <div class="flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-semibold text-neutral-900 dark:text-neutral-100">通用 OpenAI 兼容接口标准 (Universal Chat Completions)</span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-full bg-[#007AFF]/10 text-[#007AFF] font-medium">零 SDK 依赖</span>
+                </div>
+                <p class="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1 leading-relaxed">
+                  遵循开放行业标准，支持任意兼容 <code class="px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 font-mono text-[10px]">POST /v1/chat/completions</code> 规范的模型服务商（包括 DeepSeek、通义千问、Kimi、SiliconFlow、Ollama 本地、OpenAI 等）。仅需配置基础端点与密钥，即可即插即用。
+                </p>
+              </div>
+            </div>
+
             <div
               v-for="provider in settingsStore.providers"
               :key="provider.id"
@@ -575,7 +611,7 @@ onMounted(() => {
                     @click="handleTestProvider(provider.id)"
                   >
                     <i class="i-lucide-activity mr-1 text-[11px]" :class="{ 'animate-pulse': providerPingStatus[provider.id]?.testing }" />
-                    {{ providerPingStatus[provider.id]?.testing ? '测试中...' : 'Ping' }}
+                    {{ providerPingStatus[provider.id]?.testing ? '测试中...' : 'Ping 测试' }}
                   </Button>
                   <Switch
                     :model-value="provider.enabled"
@@ -586,16 +622,31 @@ onMounted(() => {
 
               <!-- 服务商配置详情（启用时展示） -->
               <div v-if="provider.enabled" class="p-4 flex flex-col gap-3.5 bg-black/[0.01] dark:bg-white/[0.01]">
+                <!-- 常用服务商快速填入 -->
+                <div class="flex items-center gap-1.5 flex-wrap pb-1">
+                  <span class="text-[11px] text-neutral-400 shrink-0">常用端点一键套用:</span>
+                  <button
+                    v-for="preset in quickEndpointPresets"
+                    :key="preset.name"
+                    type="button"
+                    class="text-[11px] px-2 py-0.5 rounded-md bg-black/5 dark:bg-white/5 hover:bg-[#007AFF]/10 hover:text-[#007AFF] text-neutral-600 dark:text-neutral-300 border-0 cursor-pointer transition-colors"
+                    @click="applyEndpointPreset(provider.id, preset)"
+                  >
+                    {{ preset.name }}
+                  </button>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <!-- Base URL -->
                   <div class="flex flex-col gap-1.5">
-                    <label class="text-xs font-medium text-neutral-700 dark:text-neutral-300">Base URL 端点</label>
+                    <label class="text-xs font-medium text-neutral-700 dark:text-neutral-300">Base URL 端点 (根地址)</label>
                     <Input
                       v-model="provider.baseUrl"
-                      placeholder="https://api.example.com/v1"
+                      placeholder="https://api.openai.com/v1"
                       icon="i-lucide-globe"
                       clearable
                     />
+                    <span class="text-[10px] text-neutral-400">自动去除结尾斜杠与冗余 /chat/completions</span>
                   </div>
 
                   <!-- API Key -->
@@ -614,19 +665,20 @@ onMounted(() => {
                     <Input
                       v-model="provider.apiKey"
                       :type="keyVisibility[provider.id] ? 'text' : 'password'"
-                      placeholder="sk-..."
+                      placeholder="sk-... (本地 Ollama 可免填)"
                       icon="i-lucide-key"
                       clearable
                     />
+                    <span class="text-[10px] text-neutral-400">仅保存在扩展本地 Local Storage，绝不上传第三方</span>
                   </div>
                 </div>
 
                 <!-- 模型列表管理区 -->
-                <div class="flex flex-col gap-2 pt-1 border-t border-black/[0.04] dark:border-white/[0.04]">
+                <div class="flex flex-col gap-2 pt-2 border-t border-black/[0.04] dark:border-white/[0.04]">
                   <div class="flex items-center justify-between">
                     <div class="text-xs font-medium text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
                       <span>可用模型列表</span>
-                      <span class="text-[10px] text-neutral-400 font-normal">({{ provider.models.length }} 个)</span>
+                      <span class="text-[10px] text-neutral-400 font-normal">(点击模型直接激活为全局默认)</span>
                     </div>
 
                     <Button
@@ -637,20 +689,22 @@ onMounted(() => {
                       @click="handleFetchRemoteModels(provider.id)"
                     >
                       <i class="i-lucide-refresh-cw mr-1 text-[10px]" :class="{ 'animate-spin': providerFetchingModels[provider.id] }" />
-                      {{ providerFetchingModels[provider.id] ? '拉取中...' : '拉取远程可用模型 (/models)' }}
+                      {{ providerFetchingModels[provider.id] ? '拉取中...' : '一键探测可用模型 (/v1/models)' }}
                     </Button>
                   </div>
 
                   <!-- 模型 Chips 列表 -->
-                  <div class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1 bg-black/[0.02] dark:bg-white/[0.02] rounded-xl border border-black/[0.04] dark:border-white/[0.04]">
+                  <div class="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1.5 bg-black/[0.02] dark:bg-white/[0.02] rounded-xl border border-black/[0.04] dark:border-white/[0.04]">
                     <div
                       v-for="m in provider.models"
                       :key="m.id"
-                      class="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono transition-all"
+                      class="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono cursor-pointer transition-all"
                       :class="settingsStore.selectedModel === m.id
                         ? 'bg-[#007AFF] text-white shadow-sm'
                         : 'bg-black/[0.04] dark:bg-white/[0.06] text-neutral-700 dark:text-neutral-300 hover:bg-black/[0.08] dark:hover:bg-white/[0.1]'"
+                      @click="settingsStore.selectedModel = m.id; triggerToast('已激活为全局默认模型: ' + m.id, 'success')"
                     >
+                      <i v-if="settingsStore.selectedModel === m.id" class="i-lucide-check text-[10px]" />
                       <span>{{ m.name || m.id }}</span>
                       <button
                         v-if="m.isCustom || provider.models.length > 1"
@@ -668,7 +722,7 @@ onMounted(() => {
                   <div class="flex items-center gap-2 mt-1">
                     <Input
                       v-model="newModelInputs[provider.id]"
-                      placeholder="输入自定义模型 ID (如 gpt-6.1-sol, deepseek-v3...)"
+                      placeholder="输入自定义模型 ID (如 gpt-6.1-sol, deepseek-chat, qwen-plus...)"
                       size="sm"
                       class="text-xs"
                       @keydown.enter.prevent="handleAddCustomModel(provider.id)"
@@ -858,7 +912,7 @@ onMounted(() => {
                     <Badge variant="warning" class="text-[10px]">极速高性价比</Badge>
                   </div>
                   <Select v-model="settingsStore.featureRouting.selectionModel" :options="settingsStore.availableModels" />
-                  <span class="text-[11px] text-neutral-400">网页圈选文字后的即时翻译与通俗解释，推荐极速响应模型 (如 gpt-4o-mini 或 DeepSeek-V3)。</span>
+                  <span class="text-[11px] text-neutral-400">网页圈选文字后的即时翻译与通俗解释，推荐极速响应模型 (如 gpt-6.1-sol-mini 或 DeepSeek-V3)。</span>
                 </div>
 
                 <div class="border-b border-black/[0.04] dark:border-white/[0.05]" />
@@ -873,7 +927,7 @@ onMounted(() => {
                     <Badge variant="secondary" class="text-[10px]">超大上下文窗口</Badge>
                   </div>
                   <Select v-model="settingsStore.featureRouting.summaryModel" :options="settingsStore.availableModels" />
-                  <span class="text-[11px] text-neutral-400">清洗提取万字长文后归纳提炼，推荐长窗口模型 (如 Gemini 1.5 Pro 或 GPT-4o)。</span>
+                  <span class="text-[11px] text-neutral-400">清洗提取万字长文后归纳提炼，推荐长窗口模型 (如 Gemini 1.5 Pro 或 gpt-6.1-sol)。</span>
                 </div>
               </div>
             </Card>

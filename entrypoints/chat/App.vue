@@ -52,7 +52,7 @@ const sessions = ref<Session[]>([
       {
         id: 'msg-welcome',
         role: 'assistant',
-        content: `### 欢迎使用 AI 智能对话工作台 (Studio)\n\n当前已接入 **${settingsStore.selectedModel || 'gpt-6.1-sol'}** 高性能推理通道。\n\n本工作台完全遵循 Apple Human Interface Guidelines 设计，具备：\n- **SSE 打字机流式响应**：毫秒级首字出词体验\n- **macOS 高保真代码视窗**：自动识别语法高亮与一键复制代码\n- **多轮会话管理**：支持多会话隔离、随时中断与导出 Markdown`,
+        content: `### 欢迎使用 AI 智能对话工作台 (Studio)\n\n当前已接入 **${settingsStore.selectedModel || 'gpt-6.1-sol'}** 通用推理通道。\n\n本工作台完全遵循 Apple Human Interface Guidelines 设计，具备：\n- **SSE 打字机流式响应**：毫秒级首字出词体验\n- **macOS 高保真代码视窗**：自动识别语法高亮与一键复制代码\n- **多轮会话管理**：支持多会话隔离、随时中断与导出 Markdown`,
         timestamp: Date.now(),
       },
     ],
@@ -423,7 +423,7 @@ const promptShortcuts = [
           <div class="relative flex items-end rounded-2xl bg-white dark:bg-[#1c1c1e] border border-black/10 dark:border-white/10 p-2 shadow-[0_4px_16px_rgba(0,0,0,0.06)] focus-within:border-[#007AFF] transition-all">
             <textarea
               v-model="inputQuery"
-              placeholder="向 gpt-6.1-sol 提问任何内容... (Enter 发送，Shift+Enter 换行)"
+              :placeholder="'向 ' + (currentChatModel || 'AI') + ' 提问任何内容... (Enter 发送，Shift+Enter 换行)'"
               rows="3"
               class="w-full resize-none border-0 bg-transparent px-2.5 py-1.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus:outline-none leading-relaxed"
               @keydown.enter.exact.prevent="handleSendMessage()"
