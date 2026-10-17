@@ -294,14 +294,19 @@ onMounted(() => {
         :class="isDark ? 'bg-[#1c1c1e]/70' : 'bg-white/70'"
       >
         <div class="flex flex-col gap-4">
-          <!-- 视窗红黄绿交通灯 + 标题 -->
-          <div class="flex items-center gap-2 px-2 py-1">
-            <div class="flex items-center gap-1.5">
-              <span class="w-3 h-3 rounded-full bg-[#FF5F56] border border-[#E0443E] inline-block" />
-              <span class="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123] inline-block" />
-              <span class="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29] inline-block" />
+          <!-- 品牌图标 + 标题 -->
+          <div class="flex items-center gap-2.5 px-2 py-1">
+            <div
+              class="w-7 h-7 rounded-xl bg-gradient-to-tr from-[#007AFF] via-[#5856D6] to-[#AF52DE] flex items-center justify-center text-white shadow-sm shadow-blue-500/20"
+            >
+              <i class="i-lucide-settings text-xs" />
             </div>
-            <span class="text-[14px] font-semibold ml-1.5 tracking-tight">偏好设置</span>
+            <div class="flex flex-col">
+              <span class="text-sm font-semibold tracking-tight text-neutral-900 dark:text-white leading-none">
+                系统偏好设置
+              </span>
+              <span class="text-[10px] text-neutral-400 font-mono mt-0.5">Settings & Preferences</span>
+            </div>
           </div>
 
           <!-- 导航菜单项 -->

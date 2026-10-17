@@ -12,7 +12,7 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "vue-tsc --noEmit",
-    "test": "node --import tsx/esm test-pipeline.mjs",
+    "test": "tsx test-core.mjs && tsx test-pipeline.mjs",
     "clean:starter": "node scripts/clean-demo.mjs",
     "postinstall": "wxt prepare"
   },
@@ -46,6 +46,7 @@
     "@wxt-dev/module-vue": "^1.0.3",
     "@wxt-dev/unocss": "^1.0.1",
     "reka-ui": "^2.10.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "unocss": "^66.7.2",
     "vite": "^8.1.5",

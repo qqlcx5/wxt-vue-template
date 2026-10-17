@@ -291,17 +291,26 @@ function handleTranslate(lang: string) {
       class="px-5 py-2.5 border-b border-black/[0.06] dark:border-white/[0.08] backdrop-blur-2xl flex items-center justify-between shrink-0 transition-colors"
       :class="isDark ? 'bg-[#1c1c1e]/90' : 'bg-white/90'"
     >
-      <div class="flex items-center gap-3">
-        <div class="flex items-center gap-1.5">
-          <span class="w-3 h-3 rounded-full bg-[#FF5F56] border border-[#E0443E] inline-block" />
-          <span class="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123] inline-block" />
-          <span class="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29] inline-block" />
+      <div class="flex items-center gap-2.5">
+        <div
+          class="w-7 h-7 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-500 flex items-center justify-center text-white shadow-sm shadow-emerald-500/20"
+        >
+          <i class="i-lucide-book-open text-xs" />
         </div>
-
-        <div class="flex items-center gap-1.5">
-          <i class="i-lucide-book-open text-[#007AFF] text-base" />
-          <span class="text-xs font-bold tracking-tight">文稿阅读器与 Markdown 实验室</span>
-          <Badge variant="primary" class="scale-85 origin-left">Showcase</Badge>
+        <div class="flex flex-col">
+          <div class="flex items-center gap-1.5 leading-none">
+            <span class="text-[13px] font-semibold tracking-tight text-neutral-900 dark:text-white">
+              Reader Studio
+            </span>
+            <span
+              class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+            >
+              Markdown • KaTeX
+            </span>
+          </div>
+          <span class="text-[10px] text-neutral-400 font-mono mt-0.5">
+            文稿阅读器与渲染实验室
+          </span>
         </div>
       </div>
 

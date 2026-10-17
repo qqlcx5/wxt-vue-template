@@ -236,15 +236,15 @@ const promptShortcuts = [
         :class="isDark ? 'bg-[#1c1c1e]/70' : 'bg-white/70'"
       >
         <div class="flex flex-col gap-3 min-h-0">
-          <!-- 顶栏：macOS 交通灯 + 标题 -->
+          <!-- 顶栏：品牌图标 + 标题 -->
           <div class="flex items-center justify-between px-1 py-1">
             <div class="flex items-center gap-2">
-              <div class="flex items-center gap-1.5">
-                <span class="w-3 h-3 rounded-full bg-[#FF5F56] border border-[#E0443E] inline-block" />
-                <span class="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123] inline-block" />
-                <span class="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29] inline-block" />
+              <div
+                class="w-6 h-6 rounded-lg bg-gradient-to-tr from-[#007AFF] via-[#5856D6] to-[#AF52DE] flex items-center justify-center text-white shadow-sm shadow-blue-500/20"
+              >
+                <i class="i-lucide-bot text-xs" />
               </div>
-              <span class="text-xs font-semibold ml-1 tracking-tight">AI Studio</span>
+              <span class="text-xs font-semibold tracking-tight text-neutral-900 dark:text-white">AI Studio</span>
             </div>
 
             <Badge variant="primary" class="scale-85 origin-right font-mono">{{ settingsStore.selectedModel }}</Badge>

@@ -27,7 +27,7 @@ const modelValue = useVModel(props, 'modelValue', emits, {
 
 const textareaClasses = computed(() =>
   cn(
-    'flex min-h-[60px] w-full rounded-lg border border-white/15 bg-zinc-800/60 px-3 py-2 text-sm text-white shadow-xs transition-colors placeholder:text-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 focus-visible:border-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-50 resize-y',
+    'flex min-h-[68px] w-full rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-black/[0.025] dark:bg-white/[0.05] px-3.5 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 transition-all focus-visible:bg-white dark:focus-visible:bg-zinc-900 focus-visible:border-apple-blue focus-visible:ring-2 focus-visible:ring-apple-blue/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 resize-none font-sans leading-relaxed',
     props.class,
   ),
 );

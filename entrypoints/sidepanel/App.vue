@@ -371,52 +371,73 @@ onMounted(async () => {
       <!-- 灵动岛 Toast 通知 -->
       <Toast :show="toastVisible" :message="toastMessage" :type="toastType" />
 
-      <!-- macOS 顶栏 -->
+      <!-- 现代化顶栏 -->
       <div
         class="sticky top-0 z-40 flex items-center justify-between px-3.5 py-2.5 border-b border-black/[0.06] dark:border-white/[0.08] backdrop-blur-2xl transition-colors"
         :class="isDark ? 'bg-[#1c1c1e]/85' : 'bg-white/85'"
       >
-        <div class="flex items-center gap-2">
-          <div class="flex items-center gap-1.5">
-            <span class="w-3 h-3 rounded-full bg-[#FF5F56] border border-[#E0443E] inline-block" />
-            <span class="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123] inline-block" />
-            <span class="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29] inline-block" />
+        <div class="flex items-center gap-2.5">
+          <div
+            class="w-7 h-7 rounded-xl bg-gradient-to-tr from-[#007AFF] via-[#5856D6] to-[#AF52DE] flex items-center justify-center text-white shadow-sm shadow-blue-500/20"
+          >
+            <i class="i-lucide-panel-right text-xs" />
           </div>
-          <span class="text-[13px] font-semibold ml-1 tracking-tight">工作台侧边栏</span>
-          <Badge variant="primary" class="scale-90 origin-left">SidePanel</Badge>
+          <div class="flex flex-col">
+            <div class="flex items-center gap-1.5 leading-none">
+              <span class="text-[13px] font-semibold tracking-tight text-neutral-900 dark:text-white">
+                侧边栏工作台
+              </span>
+              <span
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+              >
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                SidePanel
+              </span>
+            </div>
+            <span class="text-[10px] text-neutral-400 dark:text-neutral-500 mt-0.5 font-mono">
+              WXT Multi-window
+            </span>
+          </div>
         </div>
 
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-1">
           <!-- 打开全屏文稿实验室 -->
-          <Tooltip content="打开文稿阅读器与 Markdown 实验室 (Reader Studio)">
+          <Tooltip content="打开文稿阅读器实验室 (Reader Studio)">
             <button
               type="button"
-              class="flex items-center justify-center h-6 w-6 rounded-full bg-black/[0.05] dark:bg-white/[0.1] hover:bg-black/[0.08] dark:hover:bg-white/[0.15] transition-all cursor-pointer border-0 outline-none"
+              class="flex items-center justify-center h-7 w-7 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-all cursor-pointer border-0 bg-transparent"
               @click="handleOpenReaderStudio"
             >
-              <i class="i-lucide-book-open text-xs text-neutral-600 dark:text-neutral-300" />
+              <i class="i-lucide-book-open text-sm" />
             </button>
           </Tooltip>
 
           <!-- 打开选项设置 -->
-          <Tooltip content="打开全屏偏好设置">
+          <Tooltip content="打开偏好设置">
             <button
               type="button"
-              class="flex items-center justify-center h-6 w-6 rounded-full bg-black/[0.05] dark:bg-white/[0.1] hover:bg-black/[0.08] dark:hover:bg-white/[0.15] transition-all cursor-pointer border-0 outline-none"
+              class="flex items-center justify-center h-7 w-7 rounded-lg text-neutral-600 dark:text-neutral-300 hover:bg-black/[0.06] dark:hover:bg-white/[0.1] transition-all cursor-pointer border-0 bg-transparent"
               @click="openOptionsPage"
             >
-              <i class="i-lucide-settings text-xs text-neutral-600 dark:text-neutral-300" />
+              <i class="i-lucide-settings text-sm" />
             </button>
           </Tooltip>
 
+          <div class="w-px h-3.5 bg-black/[0.08] dark:bg-white/[0.1] mx-0.5" />
+
           <!-- 明暗切换 -->
-          <button
-            type="button"
-            class="flex items-center gap-1 h-6 px-2 rounded-full text-[11px] font-medium bg-black/[0.05] dark:bg-white/[0.1] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-black/[0.08] dark:hover:bg-white/[0.15] transition-all cursor-pointer border-0 outline-none"
-            @click="toggleDark()"
-          >
-            <i :class="isDark ? 'i-lucide-moon text-[#007AFF]' : 'i-lucide-sun text-[#FF9500]'" class="text-xs" />
-          </button>
+          <Tooltip :content="isDark ? '切换浅色模式' : '切换暗黑模式'">
+            <button
+              type="button"
+              class="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-black/[0.06] dark:hover:bg-white/[0.1] transition-all cursor-pointer border-0 bg-transparent"
+              @click="toggleDark()"
+            >
+              <i
+                :class="isDark ? 'i-lucide-moon text-[#007AFF]' : 'i-lucide-sun text-[#FF9500]'"
+                class="text-sm transition-transform active:rotate-45"
+              />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
