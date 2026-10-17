@@ -18,8 +18,9 @@
 ## 📁 目录架构
 
 ```text
+├── .agents/skills/      # 智能体技能与交互设计规范 (如 floating-edge-dock 悬浮胶囊规范与模板)
 ├── components/          # Vue 组件层
-│   └── ui/              # 封装好的 Reka UI + UnoCSS 原子组件库 (Button, Dialog, etc.)
+│   └── ui/              # 封装好的 Reka UI + UnoCSS 原子组件库 (Button, Dialog, Table, Pagination, etc.)
 ├── entrypoints/         # WXT 扩展入口
 │   ├── background.ts    # Background Service Worker
 │   ├── content.ts       # Content Script (Shadow DOM 隔离挂载)

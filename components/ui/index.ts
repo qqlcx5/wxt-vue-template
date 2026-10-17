@@ -21,6 +21,8 @@ export { default as Skeleton } from './Skeleton.vue';
 export { default as Avatar } from './Avatar.vue';
 export { default as Empty } from './Empty.vue';
 export { default as MarkdownViewer } from './MarkdownViewer.vue';
+export { default as Pagination, type PaginationProps } from './Pagination.vue';
+export * from './table';
 
 // 常用 Reka UI 原语透传
 export {
@@ -54,6 +56,14 @@ export {
   SelectGroup,
   SelectLabel,
   SelectSeparator,
+  PaginationRoot,
+  PaginationList,
+  PaginationListItem,
+  PaginationPrev,
+  PaginationNext,
+  PaginationFirst,
+  PaginationLast,
+  PaginationEllipsis,
   TabsRoot,
   TabsList,
   TabsTrigger,

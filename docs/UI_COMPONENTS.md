@@ -29,6 +29,15 @@ import {
   Skeleton,
   Avatar,
   Empty,
+  Pagination,
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableRow,
+  TableHead,
+  TableCell,
+  TableEmpty,
   DialogContent,
   DialogRoot,
   DialogTrigger,
@@ -496,6 +505,115 @@ const options = [
 >
   <Button variant="primary" size="sm" icon="i-lucide-plus">立即提取</Button>
 </Empty>
+```
+
+---
+
+### 23. Table 系列 (原子化通用数据表格)
+借鉴 shadcn-vue 架构设计的纯样式原子表格套件。包含 `Table`、`TableHeader`、`TableBody`、`TableFooter`、`TableRow`、`TableHead`、`TableCell`、`TableEmpty`。
+
+#### 核心特性
+- **横向拖拽滚动**：`<Table :draggable="true">` 内置鼠标抓手拖拽横向滚动，智能避开交互元素（按钮、链接、复选框等）。
+- **排序指示与对齐**：`TableHead` 支持 `align="left|center|right"`、`sortable` 与 `sort-direction="asc|desc|false"`。
+- **固定列（Sticky）**：`TableHead` 与 `TableCell` 支持 `sticky="right"` 或 `sticky="left"`，自带阴影遮罩与暗黑模式适配。
+- **行状态与空占位**：`TableRow` 支持 `selected` 高亮；`TableEmpty` 提供跨列占位。
+
+#### 示例
+```vue
+<script setup lang="ts">
+import { ref } from 'vue';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  TableEmpty,
+  Checkbox,
+} from '@/components/ui';
+
+const list = ref([
+  { id: '1', title: 'Vue 3 + WXT 扩展开发', date: '2026-10-18', views: 1200, selected: false },
+]);
+const sortOrder = ref<'asc' | 'desc' | false>('desc');
+</script>
+
+<template>
+  <Table draggable class="min-w-[600px]">
+    <TableHeader>
+      <TableRow>
+        <TableHead class="w-10 text-center">
+          <Checkbox />
+        </TableHead>
+        <TableHead>文章标题</TableHead>
+        <TableHead
+          align="right"
+          sortable
+          :sort-direction="sortOrder"
+          @click="sortOrder = sortOrder === 'desc' ? 'asc' : 'desc'"
+        >
+          浏览量
+        </TableHead>
+        <TableHead align="center" class="w-28">更新时间</TableHead>
+        <TableHead sticky="right" align="right" class="w-24">操作</TableHead>
+      </TableRow>
+    </TableHeader>
+    <TableBody>
+      <TableRow
+        v-for="item in list"
+        :key="item.id"
+        :selected="item.selected"
+      >
+        <TableCell class="text-center">
+          <Checkbox v-model:checked="item.selected" />
+        </TableCell>
+        <TableCell class="font-medium">{{ item.title }}</TableCell>
+        <TableCell align="right">{{ item.views }}</TableCell>
+        <TableCell align="center" class="text-neutral-400 font-mono text-[11px]">{{ item.date }}</TableCell>
+        <TableCell sticky="right" align="right">
+          <Button variant="ghost" size="sm">编辑</Button>
+        </TableCell>
+      </TableRow>
+      <TableEmpty v-if="list.length === 0" :colspan="5" />
+    </TableBody>
+  </Table>
+</template>
+```
+
+---
+
+### 24. Pagination (Reka UI 分页器)
+基于 `reka-ui` 的 Headless 分页组件，提供完整的切页、页码数字、省略号与每页条数下拉控制。
+
+#### Props / Emits
+- `page` / `v-model:page`: `number` 当前页码（从 1 开始）
+- `itemsPerPage` / `v-model:items-per-page`: `number` 每页条数（默认 20）
+- `total`: `number` 数据总条数
+- `showTotal`: `boolean` 是否展示左侧“共 X 条”统计（默认 `true`）
+- `showPageSize`: `boolean` 是否展示每页条数切换下拉框（默认 `false`）
+- `pageSizeOptions`: `number[]` 每页条数选项列表（默认 `[20, 50, 100, 200, 500]`）
+
+#### 示例
+```vue
+<script setup lang="ts">
+import { ref } from 'vue';
+import { Pagination } from '@/components/ui';
+
+const page = ref(1);
+const pageSize = ref(20);
+const total = ref(150);
+</script>
+
+<template>
+  <Pagination
+    v-model:page="page"
+    v-model:items-per-page="pageSize"
+    :total="total"
+    show-total
+    show-page-size
+  />
+</template>
 ```
 
 ---
