@@ -89,5 +89,32 @@ export const useArticlesStore = defineStore('articles', {
         throw err;
       }
     },
+    async updateArticleHighlights(id: number, highlights: any[]) {
+      try {
+        await db.articles.update(id, { highlights });
+        const target = this.articles.find((a) => a.id === id);
+        if (target) target.highlights = highlights;
+      } catch (err) {
+        console.error('[ArticlesStore] Failed to update highlights:', err);
+      }
+    },
+    async updateArticleTranslation(id: number, translationMarkdown: string) {
+      try {
+        await db.articles.update(id, { translationMarkdown });
+        const target = this.articles.find((a) => a.id === id);
+        if (target) target.translationMarkdown = translationMarkdown;
+      } catch (err) {
+        console.error('[ArticlesStore] Failed to update translation:', err);
+      }
+    },
+    async updateArticleProgress(id: number, readProgress: number) {
+      try {
+        await db.articles.update(id, { readProgress });
+        const target = this.articles.find((a) => a.id === id);
+        if (target) target.readProgress = readProgress;
+      } catch (err) {
+        console.error('[ArticlesStore] Failed to update readProgress:', err);
+      }
+    },
   },
 });

@@ -618,6 +618,76 @@ const total = ref(150);
 
 ---
 
+### 25. MarkdownViewer (工业级 Markdown 渲染器)
+基于 `marked` + `katex` + `dompurify` + `highlight.js` 构建，支持复杂 GFM 表格、学术脚注、LaTeX 数学公式、GitHub 风格 Callout 提示框、双链 `[[Wikilinks]]` 与 AST 级 macOS 风格高亮代码视窗。
+
+#### Props / Emits
+- `content`: `string` Markdown 源码
+- `class`: `string` 自定义容器样式类
+- `streaming`: `boolean` 是否处于大模型流式输出状态（展示打字机脉冲光标）
+- `@wikilink-click`: `(target: string) => void` 点击双链时的回调
+
+#### 示例
+```vue
+<script setup lang="ts">
+import { MarkdownViewer } from '@/components/ui';
+
+const doc = `
+# 快速开始
+这是一个支持公式 $E=mc^2$ 与 Callout 的渲染器：
+
+> [!TIP]
+> 这是一个优雅的提示胶囊！
+
+\`\`\`ts
+const answer: number = 42;
+\`\`\`
+`;
+</script>
+
+<template>
+  <MarkdownViewer :content="doc" @wikilink-click="(t) => console.log('Jump:', t)" />
+</template>
+```
+
+---
+
+### 26. DocumentReader (沉浸式多视图文稿阅读器)
+位于 `@/components/reader`，提供集成了 **Markdown 预览、W3C 上下文锚点 5 色划词标注与思考批注、目录大纲抽屉 (TOC 滚动监听)、AST 块级对齐双语翻译、源码字数/Token统计、打印/PDF 导出** 于一体的完整文稿系统。
+
+#### Props / Emits
+- `content`: `string` Markdown 正文
+- `title`: `string` 文档标题
+- `url`: `string` 来源网址
+- `highlights`: `HighlightAnchor[]` 已有标注集合
+- `translationMarkdown`: `string` 对应译文
+- `translating`: `boolean` 是否正在翻译
+- `@update:highlights`: `(hls: HighlightAnchor[]) => void`
+- `@ask-ai`: `(text: string) => void` 划词浮条点击“问 AI”
+- `@request-translate`: `(lang: string) => void` 请求触发翻译
+
+#### 示例
+```vue
+<script setup lang="ts">
+import { ref } from 'vue';
+import { DocumentReader } from '@/components/reader';
+
+const highlights = ref([]);
+</script>
+
+<template>
+  <DocumentReader
+    title="Vue 3 深入解析"
+    content="# 标题\n\n正文内容..."
+    :highlights="highlights"
+    @update:highlights="(val) => highlights = val"
+    @ask-ai="(text) => console.log('Ask:', text)"
+  />
+</template>
+```
+
+---
+
 ## 🛠️ 如何使用 `cn()` 封装新组件？
 
 若您需要新增自己的 UI 组件，只需在组件中使用 `cn()` 合并类名即可：

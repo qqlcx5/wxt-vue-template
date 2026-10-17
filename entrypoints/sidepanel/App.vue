@@ -15,6 +15,9 @@ import {
   TooltipProvider,
   MarkdownViewer,
 } from '@/components/ui';
+import { DocumentReader } from '@/components/reader';
+import type { SavedArticle } from '@/services/db';
+import type { HighlightAnchor } from '@/utils/markdown/highlighter';
 import { useSettingsStore, useArticlesStore } from '@/stores';
 import { sendToBackground } from '@/utils/messaging';
 import { extractWebContent } from '@/services/extractor';
@@ -272,6 +275,81 @@ function handleCopyMemo() {
 
 async function openOptionsPage() {
   await sendToBackground('OPEN_OPTIONS');
+}
+
+// ================= 沉浸式阅读器集成 =================
+const activeReaderArticle = ref<SavedArticle | null>(null);
+const isReaderTranslating = ref(false);
+
+function handleOpenReader(item: SavedArticle) {
+  activeReaderArticle.value = item;
+}
+
+function handleOpenExtractedInReader() {
+  if (!extractedData.value) return;
+  activeReaderArticle.value = {
+    title: extractedData.value.title,
+    content: extractedData.value.content,
+    url: currentTabInfo.value.url || '',
+    author: extractedData.value.author,
+    createdAt: Date.now(),
+  };
+}
+
+async function handleSaveHighlights(articleId?: number, hls: HighlightAnchor[] = []) {
+  if (activeReaderArticle.value) {
+    activeReaderArticle.value.highlights = hls;
+  }
+  if (articleId) {
+    await articlesStore.updateArticleHighlights(articleId, hls);
+  }
+}
+
+async function handleReaderTranslate(lang: string) {
+  if (!activeReaderArticle.value || isReaderTranslating.value) return;
+  isReaderTranslating.value = true;
+  triggerToast(`正在使用 AI 翻译为 ${lang}...`, 'info');
+
+  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    {
+      role: 'system',
+      content: `你是一位专业学术科技翻译专家。请将以下 Markdown 内容翻译成 ${lang}。必须严格保留所有 Markdown 格式、代码块、数学公式，只翻译自然语言文本。`,
+    },
+    {
+      role: 'user',
+      content: activeReaderArticle.value.content,
+    },
+  ];
+
+  streamChat({
+    feature: 'sidepanel',
+    messages,
+    onChunk: (_delta, acc) => {
+      if (activeReaderArticle.value) {
+        activeReaderArticle.value.translationMarkdown = acc;
+      }
+    },
+    onFinish: async (full) => {
+      isReaderTranslating.value = false;
+      if (activeReaderArticle.value) {
+        activeReaderArticle.value.translationMarkdown = full;
+        if (activeReaderArticle.value.id) {
+          await articlesStore.updateArticleTranslation(activeReaderArticle.value.id, full);
+        }
+      }
+      triggerToast('AI 翻译完成！', 'success');
+    },
+    onError: (err) => {
+      isReaderTranslating.value = false;
+      triggerToast('翻译失败: ' + err.message, 'error');
+    },
+  });
+}
+
+function handleReaderAskAi(text: string) {
+  activeReaderArticle.value = null;
+  currentTab.value = 'chat';
+  handleSendChatMessage(`针对以下段落进行深入分析与问答：\n\n> ${text}`);
 }
 
 onMounted(async () => {
@@ -598,6 +676,15 @@ onMounted(async () => {
                 </Button>
 
                 <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="i-lucide-book-open"
+                  @click="handleOpenExtractedInReader"
+                >
+                  沉浸阅读
+                </Button>
+
+                <Button
                   variant="success"
                   size="sm"
                   icon="i-lucide-archive"
@@ -675,6 +762,14 @@ onMounted(async () => {
                 <div class="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
+                    class="text-neutral-400 hover:text-[#007AFF] transition-colors p-1 cursor-pointer border-0 bg-transparent"
+                    title="在沉浸式阅读器中打开 (支持大纲/划词批注/双语翻译)"
+                    @click="handleOpenReader(item)"
+                  >
+                    <i class="i-lucide-book-open text-xs" />
+                  </button>
+                  <button
+                    type="button"
                     class="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors p-1 cursor-pointer border-0 bg-transparent"
                     :title="expandedArticleId === item.id ? '收起' : '展开全文'"
                     @click="expandedArticleId = expandedArticleId === item.id ? null : (item.id ?? null)"
@@ -718,6 +813,39 @@ onMounted(async () => {
             description="在网页提取页点击保存，即可在侧边栏随时离线浏览与检索"
           />
         </div>
+      </div>
+
+      <!-- 沉浸式阅读器覆盖层 (全功能 Markdown / 目录大纲 / 5色划词批注 / 双语对照 / 源码) -->
+      <div
+        v-if="activeReaderArticle"
+        class="absolute inset-0 z-50 bg-white dark:bg-[#121214] flex flex-col animate-in fade-in zoom-in-95 duration-150"
+      >
+        <div class="px-3 py-1.5 border-b border-black/[0.06] dark:border-white/[0.08] flex items-center justify-between bg-black/[0.02] dark:bg-white/[0.04] shrink-0">
+          <button
+            type="button"
+            class="flex items-center gap-1 text-xs text-[#007AFF] bg-transparent border-0 cursor-pointer font-medium p-1 hover:underline"
+            @click="activeReaderArticle = null"
+          >
+            <i class="i-lucide-arrow-left text-xs" />
+            <span>返回工作台</span>
+          </button>
+          <span class="text-[11px] text-neutral-400 font-medium truncate max-w-[200px]">
+            {{ activeReaderArticle.title }}
+          </span>
+        </div>
+        <DocumentReader
+          class="flex-1"
+          :content="activeReaderArticle.content"
+          :title="activeReaderArticle.title"
+          :url="activeReaderArticle.url"
+          :author="activeReaderArticle.author"
+          :highlights="activeReaderArticle.highlights || []"
+          :translation-markdown="activeReaderArticle.translationMarkdown"
+          :translating="isReaderTranslating"
+          @update:highlights="(hls) => handleSaveHighlights(activeReaderArticle?.id, hls)"
+          @ask-ai="handleReaderAskAi"
+          @request-translate="(lang) => handleReaderTranslate(lang)"
+        />
       </div>
     </div>
   </TooltipProvider>

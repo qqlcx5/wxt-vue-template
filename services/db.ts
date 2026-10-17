@@ -1,5 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 
+import type { HighlightAnchor } from '@/utils/markdown/highlighter';
+
 export interface SavedArticle {
   id?: number;
   url: string;
@@ -8,6 +10,10 @@ export interface SavedArticle {
   author?: string;
   createdAt: number;
   tags?: string[];
+  highlights?: HighlightAnchor[];
+  translationMarkdown?: string;
+  readProgress?: number;
+  wordCount?: number;
 }
 
 /**
