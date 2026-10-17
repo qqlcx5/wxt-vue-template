@@ -169,7 +169,7 @@ function handleClose() {
         title="复制为 Markdown 引用"
         @click="handleCopyQuote"
       >
-        <i class="i-lucide-quote text-xs text-[#34C759]" />
+        <i class="i-lucide-copy text-xs text-[#34C759]" />
         <span>复制引用</span>
       </button>
 

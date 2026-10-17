@@ -46,6 +46,10 @@ export interface ExtensionMessages {
     request: void;
     response: { success: boolean; error?: string };
   };
+  OPEN_READER: {
+    request: void;
+    response: { success: boolean; error?: string };
+  };
 }
 
 export type MessageKey = keyof ExtensionMessages;

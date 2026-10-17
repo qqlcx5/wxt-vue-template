@@ -92,6 +92,12 @@ export default defineBackground(() => {
     });
 
     browser.contextMenus.create({
+      id: 'open-reader',
+      title: '打开文稿阅读器实验室 (Reader Studio)',
+      contexts: ['all'],
+    });
+
+    browser.contextMenus.create({
       id: 'open-options',
       title: '打开系统偏好设置',
       contexts: ['action'],
@@ -109,6 +115,8 @@ export default defineBackground(() => {
       await openSidePanelSafe(tab?.windowId, tab?.id);
     } else if (info.menuItemId === 'open-chat') {
       await browser.tabs.create({ url: browser.runtime.getURL('/chat.html') });
+    } else if (info.menuItemId === 'open-reader') {
+      await browser.tabs.create({ url: browser.runtime.getURL('/reader.html') });
     } else if (info.menuItemId === 'open-options') {
       await browser.runtime.openOptionsPage();
     } else if (info.menuItemId === 'extract-page') {
@@ -241,6 +249,15 @@ export default defineBackground(() => {
   onExtensionMessage('OPEN_CHAT', async () => {
     try {
       await browser.tabs.create({ url: browser.runtime.getURL('/chat.html') });
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  onExtensionMessage('OPEN_READER', async () => {
+    try {
+      await browser.tabs.create({ url: browser.runtime.getURL('/reader.html') });
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };

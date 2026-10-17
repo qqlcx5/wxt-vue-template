@@ -352,6 +352,10 @@ function handleReaderAskAi(text: string) {
   handleSendChatMessage(`针对以下段落进行深入分析与问答：\n\n> ${text}`);
 }
 
+async function handleOpenReaderStudio() {
+  await sendToBackground('OPEN_READER');
+}
+
 onMounted(async () => {
   await refreshActiveTab();
   await articlesStore.loadArticles();
@@ -383,6 +387,17 @@ onMounted(async () => {
         </div>
 
         <div class="flex items-center gap-1.5">
+          <!-- 打开全屏文稿实验室 -->
+          <Tooltip content="打开文稿阅读器与 Markdown 实验室 (Reader Studio)">
+            <button
+              type="button"
+              class="flex items-center justify-center h-6 w-6 rounded-full bg-black/[0.05] dark:bg-white/[0.1] hover:bg-black/[0.08] dark:hover:bg-white/[0.15] transition-all cursor-pointer border-0 outline-none"
+              @click="handleOpenReaderStudio"
+            >
+              <i class="i-lucide-book-open text-xs text-neutral-600 dark:text-neutral-300" />
+            </button>
+          </Tooltip>
+
           <!-- 打开选项设置 -->
           <Tooltip content="打开全屏偏好设置">
             <button

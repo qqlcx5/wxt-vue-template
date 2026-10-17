@@ -106,6 +106,10 @@ async function openChatStudio() {
   await sendToBackground('OPEN_CHAT');
 }
 
+async function openReaderStudio() {
+  await sendToBackground('OPEN_READER');
+}
+
 const searchInput = ref('');
 const volume = ref([65]);
 const progress = ref(78);
@@ -265,6 +269,16 @@ function replayProgress() {
               @click="openChatStudio"
             >
               <i class="i-lucide-bot text-xs" />
+            </button>
+          </Tooltip>
+
+          <Tooltip content="打开文稿阅读器实验室 (Reader Studio)">
+            <button
+              type="button"
+              class="flex items-center justify-center h-6 w-6 rounded-full bg-black/[0.05] dark:bg-white/[0.1] text-emerald-500 hover:bg-black/[0.08] dark:hover:bg-white/[0.15] transition-all cursor-pointer border-0 outline-none"
+              @click="openReaderStudio"
+            >
+              <i class="i-lucide-book-open text-xs" />
             </button>
           </Tooltip>
 

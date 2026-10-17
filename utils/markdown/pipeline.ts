@@ -1,4 +1,4 @@
-import { marked, type TokenizerAndRendererExtension } from 'marked';
+import { marked, Marked, type TokenizerAndRendererExtension } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 import markedFootnote from 'marked-footnote';
@@ -17,6 +17,9 @@ export interface AstBlockToken {
   text?: string;
   lang?: string;
 }
+
+// 独立的纯净 AST Block 分块 Lexer 实例（避免被 footnote 等复杂的 inline 插件污染上下文）
+const blockLexer = new Marked();
 
 const SANITIZE_OPTIONS = {
   ADD_TAGS: [
@@ -45,11 +48,12 @@ function setupMarkedPipeline(): void {
     // 1. 学术脚注与标题 GFM 锚点生成
     marked.use(markedFootnote(), gfmHeadingId());
 
-    // 2. KaTeX 数学公式支持：$行内公式$ 与 $$行间公式$$
+    // 2. KaTeX 数学公式支持：$行内公式$ 与 $$行间公式$$（开启 nonStandard 兼容与中文字符/标点紧密贴合的公式）
     marked.use(
       markedKatex({
         throwOnError: false,
         output: 'htmlAndMathml',
+        nonStandard: true,
       })
     );
 
@@ -166,7 +170,7 @@ export function renderMarkdown(md: string): string {
   setupMarkedPipeline();
   try {
     const rawHtml = marked.parse(md, { async: false }) as string;
-    return DOMPurify.sanitize(rawHtml, SANITIZE_OPTIONS);
+    return sanitizeHtml(rawHtml);
   } catch (err) {
     console.error('[MarkdownPipeline] Parse error:', err);
     return `<div class="text-red-500 py-2">Markdown 解析错误: ${String(err)}</div>`;
@@ -174,11 +178,22 @@ export function renderMarkdown(md: string): string {
 }
 
 /**
- * 清洗外部 HTML 片段
+ * 清洗外部 HTML 片段（自适应浏览器与无 DOM 环境）
  */
 export function sanitizeHtml(html: string): string {
   if (!html) return '';
-  return DOMPurify.sanitize(html, SANITIZE_OPTIONS);
+  if (typeof DOMPurify?.sanitize === 'function') {
+    return DOMPurify.sanitize(html, SANITIZE_OPTIONS);
+  }
+  if (typeof window !== 'undefined' && typeof (DOMPurify as any) === 'function') {
+    try {
+      const purifier = (DOMPurify as any)(window);
+      if (typeof purifier?.sanitize === 'function') {
+        return purifier.sanitize(html, SANITIZE_OPTIONS);
+      }
+    } catch {}
+  }
+  return html;
 }
 
 /**
@@ -186,8 +201,7 @@ export function sanitizeHtml(html: string): string {
  */
 export function extractHeadings(md: string): TocEntry[] {
   if (!md) return [];
-  setupMarkedPipeline();
-  const tokens = marked.lexer(md);
+  const tokens = blockLexer.lexer(md);
   const headings: TocEntry[] = [];
 
   for (const token of tokens) {
@@ -215,8 +229,7 @@ export function extractHeadings(md: string): TocEntry[] {
  */
 export function splitAstBlocks(md: string): AstBlockToken[] {
   if (!md) return [];
-  setupMarkedPipeline();
-  const tokens = marked.lexer(md);
+  const tokens = blockLexer.lexer(md);
   return tokens
     .filter((t) => t.type !== 'space')
     .map((t) => ({
