@@ -21,7 +21,8 @@ import {
   DialogClose,
   TooltipProvider,
 } from '@/components/ui';
-import { useSettingsStore, useArticlesStore } from '@/stores';
+import { useSettingsStore } from '@/stores';
+import { useArticlesStore } from '@/stores/articles';
 import { testAiConnection, testProviderConnection, fetchRemoteModels } from '@/services/ai';
 
 const isDark = useDark({ initialValue: 'light' });

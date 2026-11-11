@@ -7,6 +7,8 @@ export default defineConfig({
     excludeEntrypoints: ['background'],
   },
   manifest: {
+    name: 'Qoder Analytics & Rate Monitor',
+    description: 'Qoder 官方用量监控、原生 IDE 执行耗时与速率分析扩展',
     permissions: [
       'storage',
       'sidePanel',
@@ -14,29 +16,39 @@ export default defineConfig({
       'activeTab',
       'tabs',
       'alarms',
+      'cookies',
     ],
-    host_permissions: ['<all_urls>'],
+    host_permissions: [
+      '*://*.qoder.com/*',
+      '*://*.qoder.cn/*',
+      'http://127.0.0.1:*/*',
+      'http://localhost:*/*',
+    ],
+    action: {
+      default_title: 'Qoder Analytics & Rate Monitor',
+      default_popup: 'popup.html',
+    },
     commands: {
       _execute_action: {
         suggested_key: {
           default: 'Ctrl+Shift+Y',
           mac: 'Command+Shift+Y',
         },
-        description: '打开扩展快捷弹窗',
+        description: '打开 Qoder 监控弹窗',
+      },
+      'open-dashboard': {
+        suggested_key: {
+          default: 'Ctrl+Shift+D',
+          mac: 'Command+Shift+D',
+        },
+        description: '打开 Qoder 全屏大屏工作台',
       },
       'open-sidepanel': {
         suggested_key: {
           default: 'Ctrl+Shift+S',
           mac: 'Command+Shift+S',
         },
-        description: '打开右侧工作台侧边栏',
-      },
-      'quick-extract': {
-        suggested_key: {
-          default: 'Ctrl+Shift+E',
-          mac: 'Command+Shift+E',
-        },
-        description: '快捷提取当前网页正文',
+        description: '打开 Qoder 全景侧边栏看板',
       },
     },
   },

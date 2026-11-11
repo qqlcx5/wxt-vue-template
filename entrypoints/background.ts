@@ -1,60 +1,97 @@
 import { browser } from 'wxt/browser';
 import { onExtensionMessage } from '@/utils/messaging';
-import { db } from '@/services/db';
 
 /**
  * 稳妥唤醒 Chrome 原生侧边栏 (Side Panel)
- * 优先采用 Chrome 官方提供的 chrome.sidePanel API，兼顾 windowId 与 tabId
  */
 async function openSidePanelSafe(windowId?: number, tabId?: number): Promise<boolean> {
   const sidePanelApi = (globalThis as any).chrome?.sidePanel;
   if (!sidePanelApi?.open) {
-    console.error('[Background] 当前浏览器内核不支持 chrome.sidePanel API (需 Chrome 114+)');
+    console.error('[Background] 当前浏览器内核不支持 chrome.sidePanel API');
     return false;
   }
 
-  // 1. 尝试以指定 windowId 唤起全局侧边栏
   if (windowId) {
     try {
       await sidePanelApi.open({ windowId });
       return true;
-    } catch (e) {
-      console.warn('[Background] 通过 windowId 开启侧边栏失败，尝试以 tabId 打开:', e);
-    }
+    } catch {}
   }
 
-  // 2. 尝试以指定 tabId 唤起针对当前标签页的侧边栏
   if (tabId) {
     try {
       await sidePanelApi.open({ tabId });
       return true;
-    } catch (e) {
-      console.warn('[Background] 通过 tabId 开启侧边栏失败:', e);
-    }
+    } catch {}
   }
 
-  // 3. 兜底获取最近聚焦的窗口唤起
   try {
     const win = await (globalThis as any).chrome?.windows?.getLastFocused?.();
     if (win?.id) {
       await sidePanelApi.open({ windowId: win.id });
       return true;
     }
-  } catch (e) {
-    console.error('[Background] 兜底获取最后聚焦窗口打开侧边栏失败:', e);
-  }
+  } catch {}
 
   return false;
 }
 
+/**
+ * 静默刷新 Qoder 基础用量并更新角标
+ */
+async function refreshQoderBadgeSafe() {
+  try {
+    const meRes = await fetch('https://qoder.com/api/v1/me', {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!meRes.ok) {
+      // 401 或异常，清空角标
+      await browser.action.setBadgeText({ text: '' });
+      return;
+    }
+
+    const user = await meRes.json();
+    if (!user?.id) return;
+
+    const now = Date.now();
+    const startTime = now - 86400000;
+    const trendRes = await fetch(
+      `https://qoder.com/api/v1/me/cost-center/credits/daily-trend?userId=${encodeURIComponent(
+        user.id,
+      )}&startTime=${startTime}&endTime=${now}&groupBy=all`,
+      {
+        method: 'GET',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      },
+    );
+
+    if (trendRes.ok) {
+      const data = await trendRes.json();
+      const today = new Date().toISOString().slice(0, 10);
+      const todayItem = data.trend?.find((t: any) => t.date === today);
+      const credits = todayItem ? Math.round(todayItem.credits * 10) / 10 : 0;
+
+      if (credits > 0) {
+        await browser.action.setBadgeText({ text: `${credits}` });
+        await browser.action.setBadgeBackgroundColor({ color: '#2563eb' });
+      } else {
+        await browser.action.setBadgeText({ text: '' });
+      }
+    }
+  } catch (e) {
+    console.warn('[Background] Refresh Qoder badge error:', e);
+  }
+}
+
 export default defineBackground(() => {
-  console.log('[Background] Service Worker starting with id:', browser.runtime.id);
+  console.log('[Background] Qoder Monitor background worker initialized.');
 
-  // 1. 初始化安装事件：注册右键菜单、配置侧边栏默认路径与后台定时任务
+  // 1. 初始化安装事件：注册侧边栏路径、右键菜单与定时任务
   browser.runtime.onInstalled.addListener(async () => {
-    console.log('[Background] Extension installed/updated, configuring context menus & alarms...');
-
-    // 显式确保侧边栏已针对所有标签页全局就绪
     const sidePanelApi = (globalThis as any).chrome?.sidePanel;
     if (sidePanelApi?.setOptions) {
       try {
@@ -67,119 +104,73 @@ export default defineBackground(() => {
       }
     }
 
-    // 移除旧菜单，防止重复注册报错
+    // 移除旧菜单，防止冲突
     try {
       await browser.contextMenus.removeAll();
     } catch {}
 
-    // 创建右键菜单项
+    // 创建右键菜单
     browser.contextMenus.create({
-      id: 'open-sidepanel',
-      title: '在侧边栏中打开工作台',
+      id: 'open-qoder-dashboard',
+      title: '🚀 打开 Qoder 全屏大屏工作台',
       contexts: ['all'],
     });
 
     browser.contextMenus.create({
-      id: 'extract-page',
-      title: '提取当前网页纯净正文',
-      contexts: ['page', 'selection'],
-    });
-
-    browser.contextMenus.create({
-      id: 'open-chat',
-      title: '打开全屏 AI 智能助手 (Studio)',
+      id: 'open-qoder-analytics-web',
+      title: '前往 Qoder 官方个人度量网页',
       contexts: ['all'],
     });
 
-    browser.contextMenus.create({
-      id: 'open-reader',
-      title: '打开文稿阅读器实验室 (Reader Studio)',
-      contexts: ['all'],
+    // 注册定时任务：每 15 分钟更新一次角标
+    browser.alarms.create('refresh-qoder-badge', {
+      periodInMinutes: 15,
     });
 
-    browser.contextMenus.create({
-      id: 'open-options',
-      title: '打开系统偏好设置',
-      contexts: ['action'],
-    });
-
-    // 注册定时任务（每 60 分钟一次安全心跳）
-    browser.alarms.create('maintenance-alarm', {
-      periodInMinutes: 60,
-    });
+    // 初始执行一次角标更新
+    refreshQoderBadgeSafe();
   });
 
-  // 2. 右键菜单交互调度
+  // 2. 右键菜单交互
   browser.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId === 'open-sidepanel') {
-      await openSidePanelSafe(tab?.windowId, tab?.id);
-    } else if (info.menuItemId === 'open-chat') {
-      await browser.tabs.create({ url: browser.runtime.getURL('/chat.html') });
-    } else if (info.menuItemId === 'open-reader') {
-      await browser.tabs.create({ url: browser.runtime.getURL('/reader.html') });
-    } else if (info.menuItemId === 'open-options') {
-      await browser.runtime.openOptionsPage();
-    } else if (info.menuItemId === 'extract-page') {
-      if (tab?.id && tab.url) {
-        try {
-          await db.articles.add({
-            url: tab.url,
-            title: tab.title || '提取网页快照',
-            content: `来自右键抓取的快速快照：${tab.url}`,
-            createdAt: Date.now(),
-            tags: ['右键抓取'],
-          });
-          await browser.action.setBadgeText({ text: '✓' });
-          await browser.action.setBadgeBackgroundColor({ color: '#34C759' });
-          setTimeout(() => {
-            browser.action.setBadgeText({ text: '' });
-          }, 2000);
-        } catch (e) {
-          console.error('[Background] Failed to save article from context menu:', e);
-        }
-      }
+    if (info.menuItemId === 'open-qoder-dashboard') {
+      await browser.tabs.create({ url: browser.runtime.getURL('/dashboard.html' as any) });
+    } else if (info.menuItemId === 'open-qoder-analytics-web') {
+      await browser.tabs.create({ url: 'https://qoder.com/account/analytics' });
     }
   });
 
-  // 3. 浏览器全局快捷键监听 (Commands API)
+  // 3. 全局快捷键监听
   browser.commands.onCommand.addListener(async (command) => {
-    console.log('[Background] Received command shortcut:', command);
-    if (command === 'open-sidepanel') {
+    if (command === 'open-dashboard') {
+      await browser.tabs.create({ url: browser.runtime.getURL('/dashboard.html' as any) });
+    } else if (command === 'open-sidepanel') {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       await openSidePanelSafe(tab?.windowId, tab?.id);
-    } else if (command === 'quick-extract') {
-      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id && tab.url) {
-        await db.articles.add({
-          url: tab.url,
-          title: tab.title || '快捷键提取记录',
-          content: `通过快捷键快速存入: ${tab.url}`,
-          createdAt: Date.now(),
-          tags: ['快捷键'],
-        });
-        await browser.action.setBadgeText({ text: 'OK' });
-        await browser.action.setBadgeBackgroundColor({ color: '#007AFF' });
-        setTimeout(() => {
-          browser.action.setBadgeText({ text: '' });
-        }, 2000);
-      }
     }
   });
 
-  // 4. 定时任务唤醒监听 (Alarms API)
+  // 4. 定时任务唤醒
   browser.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'maintenance-alarm') {
-      console.log('[Background] Periodic alarm triggered:', new Date().toISOString());
+    if (alarm.name === 'refresh-qoder-badge') {
+      refreshQoderBadgeSafe();
     }
   });
 
-  // 5. 强类型消息中心调度 (Messaging API)
-  onExtensionMessage('GET_CURRENT_TAB', async () => {
+  // 5. 监听标签页更新：如果用户在浏览器中打开/登录了 qoder.com，自动触发一次角标刷新
+  browser.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete' && tab.url && tab.url.includes('qoder.com')) {
+      refreshQoderBadgeSafe();
+    }
+  });
+
+  // 6. 消息响应
+  onExtensionMessage('OPEN_SIDEPANEL', async () => {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const success = await openSidePanelSafe(tab?.windowId, tab?.id);
     return {
-      id: tab?.id,
-      url: tab?.url,
-      title: tab?.title,
+      success,
+      error: success ? undefined : '未能呼出侧边栏，请使用快捷键 ⌘⇧S 打开',
     };
   });
 
@@ -188,79 +179,5 @@ export default defineBackground(() => {
       pong: true,
       time: Date.now(),
     };
-  });
-
-  onExtensionMessage('OPEN_SIDEPANEL', async () => {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    const success = await openSidePanelSafe(tab?.windowId, tab?.id);
-    return {
-      success,
-      error: success ? undefined : '未能呼出侧边栏，请使用全局快捷键 ⌘⇧S 或在网页上右键打开',
-    };
-  });
-
-  onExtensionMessage('OPEN_OPTIONS', async () => {
-    try {
-      await browser.runtime.openOptionsPage();
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
-  });
-
-  onExtensionMessage('SET_BADGE', async (data) => {
-    try {
-      await browser.action.setBadgeText({ text: data.text });
-      if (data.color) {
-        await browser.action.setBadgeBackgroundColor({ color: data.color });
-      }
-      return { success: true };
-    } catch {
-      return { success: false };
-    }
-  });
-
-  onExtensionMessage('SAVE_ARTICLE', async (data) => {
-    try {
-      const id = await db.articles.add({
-        url: data.url,
-        title: data.title,
-        content: data.content,
-        author: data.author,
-        createdAt: Date.now(),
-        tags: data.tags || ['通用'],
-      });
-      return { success: true, id };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
-  });
-
-  onExtensionMessage('CAPTURE_SCREENSHOT', async () => {
-    try {
-      const dataUrl = await browser.tabs.captureVisibleTab(undefined as any, { format: 'png' });
-      return { success: true, dataUrl };
-    } catch (err: any) {
-      console.error('[Background] Failed to capture visible tab:', err);
-      return { success: false, error: err.message };
-    }
-  });
-
-  onExtensionMessage('OPEN_CHAT', async () => {
-    try {
-      await browser.tabs.create({ url: browser.runtime.getURL('/chat.html') });
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
-  });
-
-  onExtensionMessage('OPEN_READER', async () => {
-    try {
-      await browser.tabs.create({ url: browser.runtime.getURL('/reader.html') });
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
   });
 });

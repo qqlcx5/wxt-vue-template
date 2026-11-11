@@ -1,888 +1,384 @@
 <script lang="ts" setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useDark, useToggle } from '@vueuse/core';
-import {
-  Button,
-  Card,
-  Input,
-  Textarea,
-  Badge,
-  SegmentedControl,
-  Toast,
-  Empty,
-  Kbd,
-  Tooltip,
-  TooltipProvider,
-  MarkdownViewer,
-} from '@/components/ui';
-import { DocumentReader } from '@/components/reader';
-import type { SavedArticle } from '@/services/db';
-import type { HighlightAnchor } from '@/utils/markdown/highlighter';
-import { useSettingsStore, useArticlesStore } from '@/stores';
-import { sendToBackground } from '@/utils/messaging';
-import { extractWebContent } from '@/services/extractor';
-import { streamChat, summarizeContent, type StreamChatHandle } from '@/services/ai';
-import dayjs from 'dayjs';
+import { useQoderStore } from '@/stores';
 
 const isDark = useDark({ initialValue: 'light' });
 const toggleDark = useToggle(isDark);
 
-const settingsStore = useSettingsStore();
-const articlesStore = useArticlesStore();
+const qoderStore = useQoderStore();
 
-const currentTab = ref('chat');
+// 筛选与时间范围
+const activeRange = ref<number>(7);
 
-// Toast 状态
-const toastVisible = ref(false);
-const toastMessage = ref('');
-const toastType = ref<'success' | 'info' | 'warning' | 'error'>('success');
-
-function triggerToast(msg: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') {
-  toastMessage.value = msg;
-  toastType.value = type;
-  toastVisible.value = true;
-  setTimeout(() => {
-    toastVisible.value = false;
-  }, 2200);
-}
-
-// =================== AI Copilot 对话状态 ===================
-interface ChatMessageItem {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: number;
-}
-
-const chatMessages = ref<ChatMessageItem[]>([
-  {
-    id: 'welcome',
-    role: 'assistant',
-    content: `你好！我是你的专属 AI 智能工作台助手，已挂载 **${settingsStore.selectedModel || 'gpt-6.1-sol'}** 通用推理通道。\n\n你可以随时向我提问，或点击下方快捷胶囊对当前网页进行深度提炼、代码审查与翻译。`,
-    timestamp: Date.now(),
-  },
-]);
-
-const chatInput = ref('');
-const isChatStreaming = ref(false);
-const attachPageContext = ref(false);
-let activeChatStreamHandle: StreamChatHandle | null = null;
-const chatScrollContainer = ref<HTMLDivElement | null>(null);
-
-function scrollToBottom() {
-  setTimeout(() => {
-    if (chatScrollContainer.value) {
-      chatScrollContainer.value.scrollTop = chatScrollContainer.value.scrollHeight;
-    }
-  }, 50);
-}
-
-async function handleSendChatMessage(customText?: string) {
-  const textToSend = (customText || chatInput.value).trim();
-  if (!textToSend || isChatStreaming.value) return;
-
-  chatInput.value = '';
-
-  const userMsgId = 'msg-' + Date.now();
-  chatMessages.value.push({
-    id: userMsgId,
-    role: 'user',
-    content: textToSend,
-    timestamp: Date.now(),
-  });
-
-  const assistantMsgId = 'msg-' + (Date.now() + 1);
-  const assistantMsg: ChatMessageItem = {
-    id: assistantMsgId,
-    role: 'assistant',
-    content: '',
-    timestamp: Date.now(),
-  };
-  chatMessages.value.push(assistantMsg);
-  isChatStreaming.value = true;
-  scrollToBottom();
-
-  const apiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    { role: 'system', content: settingsStore.currentSystemPrompt },
-  ];
-
-  if (attachPageContext.value) {
-    if (!currentTabInfo.value.url) {
-      await refreshActiveTab();
-    }
-    const pageContext = extractedData.value?.content
-      ? `【当前正在浏览网页】\n标题: ${currentTabInfo.value.title || '网页'}\n网址: ${currentTabInfo.value.url}\n\n正文摘要:\n${extractedData.value.content.slice(0, 3000)}`
-      : `【当前正在浏览网页】\n标题: ${currentTabInfo.value.title || '网页'}\n网址: ${currentTabInfo.value.url}`;
-    apiMessages.push({ role: 'system', content: pageContext });
-  }
-
-  const history = chatMessages.value.slice(-6, -1);
-  for (const m of history) {
-    apiMessages.push({ role: m.role, content: m.content });
-  }
-
-  activeChatStreamHandle = streamChat({
-    feature: 'sidepanel',
-    messages: apiMessages,
-    onChunk: (_delta, acc) => {
-      assistantMsg.content = acc;
-      scrollToBottom();
-    },
-    onFinish: (full) => {
-      assistantMsg.content = full;
-      isChatStreaming.value = false;
-      scrollToBottom();
-    },
-    onError: (err) => {
-      assistantMsg.content = `❌ ${err.message}`;
-      isChatStreaming.value = false;
-      scrollToBottom();
-    },
-  });
-}
-
-function handleStopChatStream() {
-  activeChatStreamHandle?.abort();
-  isChatStreaming.value = false;
-  triggerToast('已停止生成', 'info');
-}
-
-function handleClearChat() {
-  chatMessages.value = [];
-  triggerToast('会话已清空', 'info');
-}
-
-function handleExportChat() {
-  const md = chatMessages.value
-    .map((m) => `### ${m.role === 'user' ? '👤 提问' : '🤖 AI 回答'} (${dayjs(m.timestamp).format('HH:mm:ss')})\n\n${m.content}`)
-    .join('\n\n---\n\n');
-  navigator.clipboard.writeText(md);
-  triggerToast('完整对话已复制为 Markdown！', 'success');
-}
-
-async function handleOpenChatStudio() {
-  await sendToBackground('OPEN_CHAT');
-}
-
-// 网页提取状态
-const currentTabInfo = ref<{ id?: number; url?: string; title?: string }>({});
-const extracting = ref(false);
-const extractedData = ref<{
-  title: string;
-  content: string;
-  author?: string;
-  wordCount?: number;
-} | null>(null);
-
-// AI 提炼状态
-const aiSummary = ref('');
-const isAiSummarizing = ref(false);
-let activeAiStream: StreamChatHandle | null = null;
-const expandedArticleId = ref<number | null>(null);
-
-async function refreshActiveTab() {
-  try {
-    const res = await sendToBackground('GET_CURRENT_TAB');
-    currentTabInfo.value = res;
-  } catch (e) {
-    console.error('Failed to get current tab:', e);
-  }
-}
-
-async function handleExtractCurrentPage() {
-  if (!currentTabInfo.value?.url) {
-    await refreshActiveTab();
-  }
-  extracting.value = true;
-  aiSummary.value = '';
-  try {
-    const response = await fetch(currentTabInfo.value.url || window.location.href);
-    const html = await response.text();
-    const result = await extractWebContent(html, currentTabInfo.value.url);
-    extractedData.value = result;
-    triggerToast('网页正文提取成功！', 'success');
-  } catch (err: any) {
-    extractedData.value = {
-      title: currentTabInfo.value.title || '提取页面快照',
-      content: `当前网页正文链接：${currentTabInfo.value.url}\n\n已成功获取页面 DOM 结构快照。`,
-      wordCount: 156,
-      author: '网络作者',
-    };
-    triggerToast('已捕获当前页面快照', 'info');
-  } finally {
-    extracting.value = false;
-  }
-}
-
-function handleAiSummarize() {
-  if (!extractedData.value?.content) {
-    triggerToast('请先提取网页正文', 'warning');
-    return;
-  }
-  isAiSummarizing.value = true;
-  aiSummary.value = '';
-  activeAiStream?.abort();
-
-  activeAiStream = summarizeContent(extractedData.value.content, {
-    onChunk: (_delta, acc) => {
-      aiSummary.value = acc;
-    },
-    onFinish: (full) => {
-      aiSummary.value = full;
-      isAiSummarizing.value = false;
-      triggerToast('AI 提炼完成！', 'success');
-    },
-    onError: (err) => {
-      aiSummary.value = `❌ ${err.message}`;
-      isAiSummarizing.value = false;
-    },
-  });
-}
-
-function handleStopAiSummarize() {
-  activeAiStream?.abort();
-  isAiSummarizing.value = false;
-  triggerToast('已停止 AI 生成', 'info');
-}
-
-function handleCopyAiSummary() {
-  if (!aiSummary.value) return;
-  navigator.clipboard.writeText(aiSummary.value);
-  triggerToast('已复制 AI 摘要', 'success');
-}
-
-async function handleSaveExtracted() {
-  if (!extractedData.value) return;
-  try {
-    await articlesStore.addArticle({
-      url: currentTabInfo.value.url || 'https://unknown.url',
-      title: extractedData.value.title,
-      content: extractedData.value.content,
-      author: extractedData.value.author,
-      createdAt: Date.now(),
-      tags: ['侧边栏提取'],
-    });
-    triggerToast('已成功归档至离线数据库！', 'success');
-  } catch (e: any) {
-    triggerToast('保存失败: ' + e.message, 'error');
-  }
-}
-
-function handleCopyMemo() {
-  navigator.clipboard.writeText(settingsStore.memoNote);
-  triggerToast('便笺内容已复制到剪贴板', 'success');
-}
-
-async function openOptionsPage() {
-  await sendToBackground('OPEN_OPTIONS');
-}
-
-// ================= 沉浸式阅读器集成 =================
-const activeReaderArticle = ref<SavedArticle | null>(null);
-const isReaderTranslating = ref(false);
-
-function handleOpenReader(item: SavedArticle) {
-  activeReaderArticle.value = item;
-}
-
-function handleOpenExtractedInReader() {
-  if (!extractedData.value) return;
-  activeReaderArticle.value = {
-    title: extractedData.value.title,
-    content: extractedData.value.content,
-    url: currentTabInfo.value.url || '',
-    author: extractedData.value.author,
-    createdAt: Date.now(),
-  };
-}
-
-async function handleSaveHighlights(articleId?: number, hls: HighlightAnchor[] = []) {
-  if (activeReaderArticle.value) {
-    activeReaderArticle.value.highlights = hls;
-  }
-  if (articleId) {
-    await articlesStore.updateArticleHighlights(articleId, hls);
-  }
-}
-
-async function handleReaderTranslate(lang: string) {
-  if (!activeReaderArticle.value || isReaderTranslating.value) return;
-  isReaderTranslating.value = true;
-  triggerToast(`正在使用 AI 翻译为 ${lang}...`, 'info');
-
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    {
-      role: 'system',
-      content: `你是一位专业学术科技翻译专家。请将以下 Markdown 内容翻译成 ${lang}。必须严格保留所有 Markdown 格式、代码块、数学公式，只翻译自然语言文本。`,
-    },
-    {
-      role: 'user',
-      content: activeReaderArticle.value.content,
-    },
-  ];
-
-  streamChat({
-    feature: 'sidepanel',
-    messages,
-    onChunk: (_delta, acc) => {
-      if (activeReaderArticle.value) {
-        activeReaderArticle.value.translationMarkdown = acc;
-      }
-    },
-    onFinish: async (full) => {
-      isReaderTranslating.value = false;
-      if (activeReaderArticle.value) {
-        activeReaderArticle.value.translationMarkdown = full;
-        if (activeReaderArticle.value.id) {
-          await articlesStore.updateArticleTranslation(activeReaderArticle.value.id, full);
-        }
-      }
-      triggerToast('AI 翻译完成！', 'success');
-    },
-    onError: (err) => {
-      isReaderTranslating.value = false;
-      triggerToast('翻译失败: ' + err.message, 'error');
-    },
-  });
-}
-
-function handleReaderAskAi(text: string) {
-  activeReaderArticle.value = null;
-  currentTab.value = 'chat';
-  handleSendChatMessage(`针对以下段落进行深入分析与问答：\n\n> ${text}`);
-}
-
-async function handleOpenReaderStudio() {
-  await sendToBackground('OPEN_READER');
-}
-
-onMounted(async () => {
-  await refreshActiveTab();
-  await articlesStore.loadArticles();
+onMounted(() => {
+  qoderStore.init();
 });
+
+async function switchDays(days: number) {
+  activeRange.value = days;
+  await qoderStore.changeDays(days);
+}
+
+// 柱状图数据处理
+const maxDailyCredit = computed(() => {
+  if (!qoderStore.dailyTrend?.trend?.length) return 100;
+  const max = Math.max(...qoderStore.dailyTrend.trend.map((t) => t.credits));
+  return max > 0 ? max : 100;
+});
+
+// 导出 CSV 功能
+function exportCSV() {
+  if (!qoderStore.histories.length) return;
+  const headers = ['时间', '客户端', '操作', '模型分类', '真实耗时(秒)', '扣减积分', '会话ID'];
+  const rows = qoderStore.histories.map((h) => [
+    new Date(h.begin_at).toLocaleString(),
+    h.source,
+    h.operation,
+    h.model_category,
+    h.duration_sec,
+    h.credits,
+    h.session_id,
+  ]);
+
+  const csvContent =
+    'data:text/csv;charset=utf-8,\uFEFF' +
+    [headers.join(','), ...rows.map((e) => e.map((val) => `"${val}"`).join(','))].join('\n');
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement('a');
+  link.setAttribute('href', encodedUri);
+  link.setAttribute('download', `qoder-usage-histories-${Date.now()}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
 </script>
 
 <template>
-  <TooltipProvider :delay-duration="200">
-    <div
-      class="h-screen w-full flex flex-col font-sans transition-colors duration-200 select-none antialiased overflow-hidden"
-      :class="isDark ? 'bg-[#000000] text-[#f5f5f7]' : 'bg-[#F2F2F7] text-[#1d1d1f]'"
+  <div
+    class="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-800 dark:text-zinc-100 flex flex-col font-sans transition-colors duration-200"
+  >
+    <!-- 顶部状态栏 -->
+    <header
+      class="px-5 py-3.5 bg-white/80 dark:bg-zinc-900/80 backdrop-blur border-b border-slate-200/80 dark:border-zinc-800 flex items-center justify-between sticky top-0 z-20 shadow-xs"
     >
-      <!-- 灵动岛 Toast 通知 -->
-      <Toast :show="toastVisible" :message="toastMessage" :type="toastType" />
-
-      <!-- 现代化顶栏 -->
-      <div
-        class="sticky top-0 z-40 flex items-center justify-between px-3.5 py-2.5 border-b border-black/[0.06] dark:border-white/[0.08] backdrop-blur-2xl transition-colors"
-        :class="isDark ? 'bg-[#1c1c1e]/85' : 'bg-white/85'"
-      >
-        <div class="flex items-center gap-2.5">
-          <div
-            class="w-7 h-7 rounded-xl bg-gradient-to-tr from-[#007AFF] via-[#5856D6] to-[#AF52DE] flex items-center justify-center text-white shadow-sm shadow-blue-500/20"
-          >
-            <i class="i-lucide-panel-right text-xs" />
-          </div>
-          <div class="flex flex-col">
-            <div class="flex items-center gap-1.5 leading-none">
-              <span class="text-[13px] font-semibold tracking-tight text-neutral-900 dark:text-white">
-                侧边栏工作台
-              </span>
-              <span
-                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-              >
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                SidePanel
-              </span>
-            </div>
-            <span class="text-[10px] text-neutral-400 dark:text-neutral-500 mt-0.5 font-mono">
-              WXT Multi-window
+      <div class="flex items-center gap-3">
+        <div
+          class="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-sm"
+        >
+          Q
+        </div>
+        <div>
+          <div class="text-sm font-semibold flex items-center gap-2">
+            Qoder 效率与用量全景大屏
+            <span
+              v-if="qoderStore.authStatus === 'authenticated'"
+              class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-mono font-medium border border-emerald-200 dark:border-emerald-800/40"
+            >
+              已连接
             </span>
           </div>
-        </div>
-
-        <div class="flex items-center gap-1">
-          <!-- 打开全屏文稿实验室 -->
-          <Tooltip content="打开文稿阅读器实验室 (Reader Studio)">
-            <button
-              type="button"
-              class="flex items-center justify-center h-7 w-7 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-all cursor-pointer border-0 bg-transparent"
-              @click="handleOpenReaderStudio"
-            >
-              <i class="i-lucide-book-open text-sm" />
-            </button>
-          </Tooltip>
-
-          <!-- 打开选项设置 -->
-          <Tooltip content="打开偏好设置">
-            <button
-              type="button"
-              class="flex items-center justify-center h-7 w-7 rounded-lg text-neutral-600 dark:text-neutral-300 hover:bg-black/[0.06] dark:hover:bg-white/[0.1] transition-all cursor-pointer border-0 bg-transparent"
-              @click="openOptionsPage"
-            >
-              <i class="i-lucide-settings text-sm" />
-            </button>
-          </Tooltip>
-
-          <div class="w-px h-3.5 bg-black/[0.08] dark:bg-white/[0.1] mx-0.5" />
-
-          <!-- 明暗切换 -->
-          <Tooltip :content="isDark ? '切换浅色模式' : '切换暗黑模式'">
-            <button
-              type="button"
-              class="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-black/[0.06] dark:hover:bg-white/[0.1] transition-all cursor-pointer border-0 bg-transparent"
-              @click="toggleDark()"
-            >
-              <i
-                :class="isDark ? 'i-lucide-moon text-[#007AFF]' : 'i-lucide-sun text-[#FF9500]'"
-                class="text-sm transition-transform active:rotate-45"
-              />
-            </button>
-          </Tooltip>
+          <div class="text-[11px] text-slate-400 dark:text-zinc-500">
+            原生 IDE 性能洞察 · 耗时分布 · 积分消耗趋势
+          </div>
         </div>
       </div>
 
-      <!-- 主体滚动区域 -->
-      <div class="flex-1 overflow-y-auto p-3.5 flex flex-col gap-3.5">
-        <!-- 分段选择器 -->
-        <SegmentedControl
-          v-model="currentTab"
-          :options="[
-            { value: 'chat', label: 'AI 对话', icon: 'i-lucide-bot' },
-            { value: 'clipper', label: '网页提取', icon: 'i-lucide-book-open' },
-            { value: 'notes', label: '速记便笺', icon: 'i-lucide-file-text' },
-            { value: 'library', label: '离线文库', icon: 'i-lucide-library' },
-          ]"
-        />
-
-        <!-- ================= TAB 0: AI 智能对话 (AI Copilot) ================= -->
-        <div v-if="currentTab === 'chat'" class="flex-1 flex flex-col gap-2.5 min-h-0 animate-in fade-in duration-150">
-          <!-- AI 状态顶栏 -->
-          <div class="flex items-center justify-between px-1">
-            <div class="flex items-center gap-1.5">
-              <span class="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span class="text-xs font-mono font-medium text-neutral-600 dark:text-neutral-300">
-                {{ settingsStore.featureRouting.sidepanelModel }}
-              </span>
-              <Badge variant="primary" class="scale-80 origin-left">已连接</Badge>
-            </div>
-
-            <div class="flex items-center gap-1">
-              <Tooltip content="在独立全屏标签页中打开 AI 工作台">
-                <button
-                  type="button"
-                  class="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md text-[#007AFF] hover:bg-[#007AFF]/10 transition-colors border-0 bg-transparent cursor-pointer font-medium"
-                  @click="handleOpenChatStudio"
-                >
-                  <i class="i-lucide-external-link text-xs" />
-                  <span>全屏</span>
-                </button>
-              </Tooltip>
-
-              <button
-                type="button"
-                class="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors border-0 bg-transparent cursor-pointer"
-                title="导出为 Markdown"
-                @click="handleExportChat"
-              >
-                <i class="i-lucide-share text-xs" />
-              </button>
-
-              <button
-                type="button"
-                class="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded text-neutral-400 hover:text-red-500 transition-colors border-0 bg-transparent cursor-pointer"
-                title="清空对话"
-                @click="handleClearChat"
-              >
-                <i class="i-lucide-trash-2 text-xs" />
-              </button>
-            </div>
-          </div>
-
-          <!-- 网页上下文附加勾选栏 -->
-          <div class="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/[0.04] dark:border-white/[0.06] text-xs">
-            <div class="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-300">
-              <i class="i-lucide-file-text text-[#007AFF] text-xs" />
-              <span class="text-[11px]">附带当前页面正文作为上下文</span>
-            </div>
-            <Switch v-model:checked="attachPageContext" />
-          </div>
-
-          <!-- 快捷 Prompt 胶囊横向滑动条 -->
-          <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px]">
-            <button
-              type="button"
-              class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-neutral-700 dark:text-neutral-300 whitespace-nowrap border-0 cursor-pointer transition-all active:scale-95"
-              @click="handleSendChatMessage('请详细总结当前网页的核心论点并列出 3 个关键结论。')"
-            >
-              <i class="i-lucide-sparkles text-[#007AFF] text-xs" />
-              <span>3点速览</span>
-            </button>
-            <button
-              type="button"
-              class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-neutral-700 dark:text-neutral-300 whitespace-nowrap border-0 cursor-pointer transition-all active:scale-95"
-              @click="handleSendChatMessage('请帮我审查分析以下代码，指出潜在隐患并提供重构优化方案：')"
-            >
-              <i class="i-lucide-code text-[#34C759] text-xs" />
-              <span>代码优化</span>
-            </button>
-            <button
-              type="button"
-              class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] text-neutral-700 dark:text-neutral-300 whitespace-nowrap border-0 cursor-pointer transition-all active:scale-95"
-              @click="handleSendChatMessage('请将以下内容进行学术论文级专业中英双语润色翻译：')"
-            >
-              <i class="i-lucide-languages text-[#AF52DE] text-xs" />
-              <span>学术双语</span>
-            </button>
-          </div>
-
-          <!-- 消息历史滚动容器 -->
-          <div
-            ref="chatScrollContainer"
-            class="flex-1 overflow-y-auto pr-1 flex flex-col gap-3 min-h-[220px]"
-          >
-            <div
-              v-for="msg in chatMessages"
-              :key="msg.id"
-              class="flex flex-col gap-1 text-xs leading-relaxed animate-in fade-in duration-100"
-              :class="msg.role === 'user' ? 'items-end' : 'items-start'"
-            >
-              <!-- 角色与时间徽标 -->
-              <div class="flex items-center gap-1.5 px-1 text-[10px] text-neutral-400 font-mono">
-                <span v-if="msg.role === 'user'">👤 提问</span>
-                <span v-else class="flex items-center gap-1 text-[#007AFF]">
-                  <i class="i-lucide-bot text-xs" />
-                  <span>{{ settingsStore.featureRouting.sidepanelModel }}</span>
-                </span>
-                <span>{{ dayjs(msg.timestamp).format('HH:mm') }}</span>
-              </div>
-
-              <!-- 气泡内容 -->
-              <div
-                v-if="msg.role === 'user'"
-                class="max-w-[85%] rounded-2xl rounded-tr-sm bg-[#007AFF] text-white px-3.5 py-2 shadow-sm font-sans whitespace-pre-wrap select-text leading-relaxed"
-              >
-                {{ msg.content }}
-              </div>
-
-              <div
-                v-else
-                class="w-full rounded-2xl rounded-tl-sm bg-white dark:bg-[#1c1c1e] border border-black/[0.06] dark:border-white/[0.08] p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] text-neutral-800 dark:text-neutral-200 select-text"
-              >
-                <div v-if="!msg.content && isChatStreaming" class="flex items-center gap-2 text-neutral-400 py-2">
-                  <i class="i-lucide-loader-2 text-xs animate-spin text-[#007AFF]" />
-                  <span>正在思考与流式输出...</span>
-                </div>
-                <template v-else>
-                  <MarkdownViewer :content="msg.content" />
-                  <span v-if="isChatStreaming && msg.id === chatMessages[chatMessages.length - 1]?.id" class="inline-block w-1.5 h-3.5 bg-[#007AFF] ml-0.5 animate-pulse align-middle" />
-                </template>
-              </div>
-            </div>
-          </div>
-
-          <!-- 底部输入控制条 -->
-          <div class="pt-2 border-t border-black/[0.06] dark:border-white/[0.08] flex flex-col gap-1.5">
-            <div class="relative flex items-end rounded-2xl bg-white dark:bg-[#1c1c1e] border border-black/10 dark:border-white/10 p-1.5 shadow-[0_2px_10px_rgba(0,0,0,0.06)] focus-within:border-[#007AFF] transition-all">
-              <textarea
-                v-model="chatInput"
-                :placeholder="`向 ${settingsStore.featureRouting.sidepanelModel} 提问... (Enter 发送)`"
-                rows="2"
-                class="w-full resize-none border-0 bg-transparent px-2 py-1 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus:outline-none leading-relaxed"
-                @keydown.enter.exact.prevent="handleSendChatMessage()"
-              />
-
-              <div class="flex items-center gap-1 pl-1">
-                <Button
-                  v-if="isChatStreaming"
-                  variant="destructive"
-                  size="sm"
-                  class="rounded-xl px-2.5 h-7"
-                  icon="i-lucide-square"
-                  @click="handleStopChatStream"
-                >
-                  停止
-                </Button>
-                <Button
-                  v-else
-                  variant="primary"
-                  size="sm"
-                  :disabled="!chatInput.trim()"
-                  class="rounded-xl px-2.5 h-7"
-                  icon="i-lucide-send"
-                  @click="handleSendChatMessage()"
-                >
-                  发送
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ================= TAB 1: 随手速记 ================= -->
-        <div v-if="currentTab === 'notes'" class="flex flex-col gap-3 animate-in fade-in duration-150">
-          <Card title="持久化实时便笺">
-            <div class="flex flex-col gap-2.5 py-0.5">
-              <Textarea
-                v-model="settingsStore.memoNote"
-                placeholder="随手写下当前思考、引用段落或代办任务，自动跨 Popup/侧边栏双向持久化..."
-                :rows="8"
-              />
-
-              <div class="flex items-center justify-between pt-1">
-                <span class="text-[11px] text-neutral-400">
-                  字数统计：{{ settingsStore.memoNote.length }} 字
-                </span>
-
-                <div class="flex items-center gap-2">
-                  <Button variant="secondary" size="sm" icon="i-lucide-copy" @click="handleCopyMemo">
-                    复制内容
-                  </Button>
-                  <Button
-                    variant="neutral"
-                    size="sm"
-                    icon="i-lucide-eraser"
-                    @click="settingsStore.memoNote = ''; triggerToast('便笺已清空', 'info')"
-                  >
-                    清空
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          <Card title="快捷键提示">
-            <div class="flex items-center justify-between text-xs py-0.5">
-              <span class="text-neutral-500">呼出侧边栏全局快捷键</span>
-              <Kbd>⌘⇧S</Kbd>
-            </div>
-          </Card>
-        </div>
-
-        <!-- ================= TAB 2: 网页提取 ================= -->
-        <div v-if="currentTab === 'clipper'" class="flex flex-col gap-3 animate-in fade-in duration-150">
-          <Card title="活跃标签页信息">
-            <div class="flex flex-col gap-2 py-0.5">
-              <div class="flex flex-col">
-                <span class="text-[13px] font-medium leading-tight line-clamp-1">
-                  {{ currentTabInfo.title || '正在获取页面标题...' }}
-                </span>
-                <span class="text-[11px] text-neutral-400 leading-tight mt-1 truncate">
-                  {{ currentTabInfo.url || 'https://...' }}
-                </span>
-              </div>
-
-              <div class="flex items-center gap-2 mt-2">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  class="flex-1"
-                  icon="i-lucide-sparkles"
-                  :disabled="extracting"
-                  @click="handleExtractCurrentPage"
-                >
-                  {{ extracting ? '正在解析正文...' : '提取当前网页纯净正文' }}
-                </Button>
-                <Button variant="secondary" size="sm" icon="i-lucide-rotate-cw" @click="refreshActiveTab" />
-              </div>
-            </div>
-          </Card>
-
-          <!-- 提取结果卡片 -->
-          <Card v-if="extractedData" title="提取内容预览">
-            <div class="flex flex-col gap-2 py-0.5">
-              <div class="flex items-center justify-between">
-                <h4 class="text-[13px] font-semibold line-clamp-1">{{ extractedData.title }}</h4>
-                <Badge variant="success">{{ extractedData.wordCount }} 字</Badge>
-              </div>
-
-              <div class="max-h-40 overflow-y-auto rounded-lg bg-black/[0.03] dark:bg-white/[0.04] p-2.5 text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed font-mono whitespace-pre-wrap border border-black/[0.05] dark:border-white/[0.05]">
-                {{ extractedData.content }}
-              </div>
-
-              <div class="flex items-center gap-2 mt-1">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  class="flex-1"
-                  icon="i-lucide-sparkles"
-                  :disabled="isAiSummarizing"
-                  @click="handleAiSummarize"
-                >
-                  {{ isAiSummarizing ? 'AI 正在提炼...' : 'AI 3点速览' }}
-                </Button>
-
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon="i-lucide-book-open"
-                  @click="handleOpenExtractedInReader"
-                >
-                  沉浸阅读
-                </Button>
-
-                <Button
-                  variant="success"
-                  size="sm"
-                  icon="i-lucide-archive"
-                  @click="handleSaveExtracted"
-                >
-                  存入离线文库
-                </Button>
-              </div>
-            </div>
-          </Card>
-
-          <!-- AI 智能提炼结论卡片 -->
-          <Card v-if="aiSummary || isAiSummarizing" title="AI 智能摘要提炼">
-            <div class="flex flex-col gap-2 py-0.5">
-              <div v-if="!aiSummary && isAiSummarizing" class="flex items-center gap-2 text-xs text-neutral-400 py-4 justify-center">
-                <i class="i-lucide-loader-2 text-sm animate-spin text-[#007AFF]" />
-                <span>AI 正在快速阅读提炼关键要点...</span>
-              </div>
-              <div v-else class="max-h-56 overflow-y-auto pr-1">
-                <MarkdownViewer :content="aiSummary" />
-                <span v-if="isAiSummarizing" class="inline-block w-1.5 h-3.5 bg-[#007AFF] ml-0.5 animate-pulse align-middle" />
-              </div>
-
-              <div class="flex items-center justify-between pt-1 border-t border-black/[0.04] dark:border-white/[0.04]">
-                <Button
-                  v-if="isAiSummarizing"
-                  variant="destructive"
-                  size="sm"
-                  icon="i-lucide-square"
-                  @click="handleStopAiSummarize"
-                >
-                  停止生成
-                </Button>
-                <div v-else class="text-[11px] text-neutral-400">
-                  SSE 流式大模型输出
-                </div>
-
-                <Button
-                  v-if="aiSummary"
-                  variant="secondary"
-                  size="sm"
-                  icon="i-lucide-copy"
-                  @click="handleCopyAiSummary"
-                >
-                  复制摘要
-                </Button>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        <!-- ================= TAB 3: 离线文库 ================= -->
-        <div v-if="currentTab === 'library'" class="flex flex-col gap-3 animate-in fade-in duration-150">
-          <Input
-            v-model="articlesStore.searchQuery"
-            placeholder="搜索离线文章与快照..."
-            icon="i-lucide-search"
-            clearable
-          />
-
-          <div v-if="articlesStore.filteredArticles.length > 0" class="flex flex-col gap-2.5">
-            <div
-              v-for="item in articlesStore.filteredArticles"
-              :key="item.id"
-              class="rounded-xl border border-black/[0.06] dark:border-white/[0.08] bg-white dark:bg-[#1c1c1e] p-3 shadow-[0_1px_3px_rgba(0,0,0,0.03)] flex flex-col gap-2"
-            >
-              <div class="flex items-start justify-between gap-2">
-                <h4
-                  class="text-[13px] font-semibold leading-snug cursor-pointer hover:text-[#007AFF] transition-colors"
-                  :class="expandedArticleId === item.id ? '' : 'line-clamp-2'"
-                  @click="expandedArticleId = expandedArticleId === item.id ? null : (item.id ?? null)"
-                >
-                  {{ item.title }}
-                </h4>
-                <div class="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    class="text-neutral-400 hover:text-[#007AFF] transition-colors p-1 cursor-pointer border-0 bg-transparent"
-                    title="在沉浸式阅读器中打开 (支持大纲/划词批注/双语翻译)"
-                    @click="handleOpenReader(item)"
-                  >
-                    <i class="i-lucide-book-open text-xs" />
-                  </button>
-                  <button
-                    type="button"
-                    class="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors p-1 cursor-pointer border-0 bg-transparent"
-                    :title="expandedArticleId === item.id ? '收起' : '展开全文'"
-                    @click="expandedArticleId = expandedArticleId === item.id ? null : (item.id ?? null)"
-                  >
-                    <i :class="expandedArticleId === item.id ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" class="text-xs" />
-                  </button>
-                  <button
-                    type="button"
-                    class="text-neutral-400 hover:text-red-500 transition-colors p-1 cursor-pointer border-0 bg-transparent"
-                    title="删除"
-                    @click="item.id && articlesStore.deleteArticle(item.id)"
-                  >
-                    <i class="i-lucide-trash-2 text-xs" />
-                  </button>
-                </div>
-              </div>
-
-              <!-- 展开时完整 Markdown 渲染，未展开时两行预览 -->
-              <div v-if="expandedArticleId === item.id" class="text-xs text-neutral-600 dark:text-neutral-300 py-1 border-t border-black/[0.04] dark:border-white/[0.04]">
-                <MarkdownViewer :content="item.content" />
-              </div>
-              <p v-else class="text-xs text-neutral-500 line-clamp-2 leading-relaxed">
-                {{ item.content }}
-              </p>
-
-              <div class="flex items-center justify-between text-[11px] text-neutral-400 pt-1 border-t border-black/[0.04] dark:border-white/[0.04]">
-                <span>{{ dayjs(item.createdAt).format('MM-DD HH:mm') }}</span>
-                <div class="flex gap-1">
-                  <Badge v-for="tag in item.tags" :key="tag" variant="secondary" class="scale-90">
-                    {{ tag }}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <Empty
-            v-else
-            icon="i-lucide-folder-open"
-            title="暂无匹配文章"
-            description="在网页提取页点击保存，即可在侧边栏随时离线浏览与检索"
-          />
-        </div>
-      </div>
-
-      <!-- 沉浸式阅读器覆盖层 (全功能 Markdown / 目录大纲 / 5色划词批注 / 双语对照 / 源码) -->
-      <div
-        v-if="activeReaderArticle"
-        class="absolute inset-0 z-50 bg-white dark:bg-[#121214] flex flex-col animate-in fade-in zoom-in-95 duration-150"
-      >
-        <div class="px-3 py-1.5 border-b border-black/[0.06] dark:border-white/[0.08] flex items-center justify-between bg-black/[0.02] dark:bg-white/[0.04] shrink-0">
+      <div class="flex items-center gap-2">
+        <!-- 时间跨度选择器 -->
+        <div class="bg-slate-100 dark:bg-zinc-800 p-0.5 rounded-lg flex items-center text-xs font-medium">
           <button
-            type="button"
-            class="flex items-center gap-1 text-xs text-[#007AFF] bg-transparent border-0 cursor-pointer font-medium p-1 hover:underline"
-            @click="activeReaderArticle = null"
+            @click="switchDays(1)"
+            :class="activeRange === 1 ? 'bg-white dark:bg-zinc-700 text-blue-600 dark:text-blue-400 shadow-xs' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700'"
+            class="px-2.5 py-1 rounded-md transition"
           >
-            <i class="i-lucide-arrow-left text-xs" />
-            <span>返回工作台</span>
+            1天
           </button>
-          <span class="text-[11px] text-neutral-400 font-medium truncate max-w-[200px]">
-            {{ activeReaderArticle.title }}
-          </span>
+          <button
+            @click="switchDays(7)"
+            :class="activeRange === 7 ? 'bg-white dark:bg-zinc-700 text-blue-600 dark:text-blue-400 shadow-xs' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700'"
+            class="px-2.5 py-1 rounded-md transition"
+          >
+            7天
+          </button>
+          <button
+            @click="switchDays(30)"
+            :class="activeRange === 30 ? 'bg-white dark:bg-zinc-700 text-blue-600 dark:text-blue-400 shadow-xs' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700'"
+            class="px-2.5 py-1 rounded-md transition"
+          >
+            30天
+          </button>
         </div>
-        <DocumentReader
-          class="flex-1"
-          :content="activeReaderArticle.content"
-          :title="activeReaderArticle.title"
-          :url="activeReaderArticle.url"
-          :author="activeReaderArticle.author"
-          :highlights="activeReaderArticle.highlights || []"
-          :translation-markdown="activeReaderArticle.translationMarkdown"
-          :translating="isReaderTranslating"
-          @update:highlights="(hls) => handleSaveHighlights(activeReaderArticle?.id, hls)"
-          @ask-ai="handleReaderAskAi"
-          @request-translate="(lang) => handleReaderTranslate(lang)"
-        />
+
+        <!-- 刷新数据 -->
+        <button
+          @click="qoderStore.refresh()"
+          :disabled="qoderStore.isRefreshing"
+          title="重新抓取最新数据"
+          class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 dark:text-zinc-400 transition"
+        >
+          <svg
+            class="w-4 h-4"
+            :class="{ 'animate-spin': qoderStore.isRefreshing }"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+
+        <!-- 主题切换 -->
+        <button
+          @click="() => toggleDark()"
+          title="切换深色/浅色模式"
+          class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 dark:text-zinc-400 transition"
+        >
+          <svg v-if="isDark" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 9h-1m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+          <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+        </button>
       </div>
-    </div>
-  </TooltipProvider>
+    </header>
+
+    <!-- 主屏内容区域 -->
+    <main class="p-5 flex-1 flex flex-col gap-5 max-w-6xl w-full mx-auto">
+      <!-- 异常情况: 未登录 -->
+      <div
+        v-if="qoderStore.authStatus === 'unauthorized'"
+        class="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl p-8 text-center max-w-md mx-auto my-12 shadow-sm"
+      >
+        <div class="w-14 h-14 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center mb-4">
+          <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <h3 class="text-base font-bold text-slate-900 dark:text-zinc-100 mb-1">未检测到 Qoder 登录凭证</h3>
+        <p class="text-xs text-slate-500 dark:text-zinc-400 mb-6 leading-relaxed">
+          请在浏览器中登录 Qoder 官方账号。登录完成后，本侧边栏将自动获取并更新您的用量数据与原生 IDE 耗时分析。
+        </p>
+        <button
+          @click="qoderStore.login()"
+          class="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition"
+        >
+          打开新标签页登录 Qoder
+        </button>
+        <button
+          @click="qoderStore.init()"
+          class="w-full mt-2 py-2 px-4 rounded-xl bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300 text-xs transition"
+        >
+          重新检测
+        </button>
+      </div>
+
+      <!-- 正常情况: 渲染仪表盘 -->
+      <template v-else-if="qoderStore.authStatus === 'authenticated'">
+        <!-- 第一行: 四个核心指标卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <!-- 卡片 1: 周期累计积分 -->
+          <div class="bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 rounded-2xl p-4 shadow-xs flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 dark:text-zinc-500 text-xs">
+              <span>周期总消耗</span>
+              <span class="text-[10px] font-mono bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">
+                {{ activeRange }} 天
+              </span>
+            </div>
+            <div class="my-2">
+              <span class="text-2xl font-bold font-mono text-slate-900 dark:text-zinc-100">{{ qoderStore.totalPeriodCredits }}</span>
+              <span class="text-xs text-slate-400 ml-1">Credits</span>
+            </div>
+            <div class="text-[11px] text-slate-500 dark:text-zinc-400 flex items-center justify-between">
+              <span>峰值单日:</span>
+              <span class="font-mono font-medium text-slate-700 dark:text-zinc-300">
+                {{ qoderStore.peakInfo.peak }} ({{ qoderStore.peakInfo.date }})
+              </span>
+            </div>
+          </div>
+
+          <!-- 卡片 2: 原生 IDE 响应速度 -->
+          <div class="bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 rounded-2xl p-4 shadow-xs flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 dark:text-zinc-500 text-xs">
+              <span>单次交互耗时</span>
+              <span class="text-[10px] font-mono text-emerald-600 dark:text-emerald-400">平均耗时</span>
+            </div>
+            <div class="my-2 flex items-baseline gap-1">
+              <span class="text-2xl font-bold font-mono text-slate-900 dark:text-zinc-100">{{ qoderStore.avgDurationSec }}</span>
+              <span class="text-xs text-slate-400">秒 / 次</span>
+            </div>
+            <div class="text-[11px] text-slate-500 dark:text-zinc-400 flex items-center justify-between">
+              <span>每次会话平均:</span>
+              <span class="font-mono font-medium text-slate-700 dark:text-zinc-300">
+                {{ Math.round((qoderStore.dailyTrend?.avgCreditsPerSession || 0) * 10) / 10 }} Credits
+              </span>
+            </div>
+          </div>
+
+          <!-- 卡片 3: AI 代码贡献率 -->
+          <div class="bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 rounded-2xl p-4 shadow-xs flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 dark:text-zinc-500 text-xs">
+              <span>AI 代码贡献率</span>
+              <span class="text-[10px] font-mono text-blue-600 dark:text-blue-400">工程效能</span>
+            </div>
+            <div class="my-2 flex items-baseline gap-1">
+              <span class="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">{{ qoderStore.aiContributionRate }}</span>
+              <span class="text-xs text-slate-400">%</span>
+            </div>
+            <div class="text-[11px] text-slate-500 dark:text-zinc-400 flex items-center justify-between">
+              <span>采纳代码行数:</span>
+              <span class="font-mono font-medium text-slate-700 dark:text-zinc-300">
+                {{ qoderStore.overview?.acceptedLinesEdit?.toLocaleString() || '--' }} 行
+              </span>
+            </div>
+          </div>
+
+          <!-- 卡片 4: 连续活跃与消息 -->
+          <div class="bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 rounded-2xl p-4 shadow-xs flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 dark:text-zinc-500 text-xs">
+              <span>活跃天数 & 消息</span>
+              <span class="text-[10px] font-mono text-slate-400">Streak</span>
+            </div>
+            <div class="my-2 flex items-baseline gap-1">
+              <span class="text-2xl font-bold font-mono text-slate-900 dark:text-zinc-100">
+                {{ qoderStore.overview?.cumulativeActiveDays || 0 }}
+              </span>
+              <span class="text-xs text-slate-400">天连续活跃</span>
+            </div>
+            <div class="text-[11px] text-slate-500 dark:text-zinc-400 flex items-center justify-between">
+              <span>总修改代码:</span>
+              <span class="font-mono font-medium text-slate-700 dark:text-zinc-300">
+                {{ qoderStore.overview?.aiLinesChanged?.toLocaleString() || '--' }} / {{ qoderStore.overview?.totalLinesChanged?.toLocaleString() || '--' }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 第二行: 每日用量趋势柱状图 -->
+        <div class="bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 rounded-2xl p-5 shadow-xs">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <div class="text-sm font-bold text-slate-900 dark:text-zinc-100">每日消耗趋势分布</div>
+              <div class="text-xs text-slate-400 dark:text-zinc-500">柱高反映单日消耗积分，悬浮可查看详细消息吞吐</div>
+            </div>
+            <div class="flex items-center gap-3 text-xs font-mono">
+              <span class="flex items-center gap-1.5 text-slate-600 dark:text-zinc-400">
+                <span class="w-3 h-3 rounded bg-blue-500 inline-block"></span> 消耗积分
+              </span>
+            </div>
+          </div>
+
+          <!-- 趋势图表区 -->
+          <div class="h-48 flex items-end gap-3 pt-6 pb-2 border-b border-slate-100 dark:border-zinc-800 overflow-x-auto">
+            <div
+              v-for="item in qoderStore.dailyTrend?.trend || []"
+              :key="item.date"
+              class="flex-1 min-w-[36px] flex flex-col items-center gap-2 group relative h-full justify-end"
+            >
+              <!-- 悬停气泡 (Tooltip) -->
+              <div
+                class="absolute -top-10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-slate-900 text-white text-[10px] font-mono py-1 px-2 rounded-md whitespace-nowrap shadow-md z-20"
+              >
+                {{ item.date }}: {{ Math.round(item.credits * 10) / 10 }} Credits ({{ item.messageCount }} 条)
+              </div>
+
+              <!-- 柱体 -->
+              <div
+                class="w-full max-w-[32px] rounded-t-lg bg-blue-500/80 hover:bg-blue-600 transition-all duration-300 cursor-pointer"
+                :style="{ height: `${Math.max(4, Math.min(100, (item.credits / maxDailyCredit) * 100))}%` }"
+              ></div>
+
+              <!-- 日期标签 -->
+              <span class="text-[10px] text-slate-400 dark:text-zinc-500 font-mono scale-90">
+                {{ item.date.slice(5) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 第三行: 模型分布卡片与流水记录明细 -->
+        <div class="bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 rounded-2xl p-5 shadow-xs">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <div class="text-sm font-bold text-slate-900 dark:text-zinc-100">原生 IDE / CLI 调用明细表</div>
+              <div class="text-xs text-slate-400 dark:text-zinc-500">每笔会话真实毫秒级起止耗时与积分明细</div>
+            </div>
+            <button
+              @click="exportCSV"
+              class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 text-xs font-medium transition flex items-center gap-1.5"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              导出 CSV
+            </button>
+          </div>
+
+          <!-- 模型分布胶囊 -->
+          <div class="flex flex-wrap gap-2 mb-4">
+            <div
+              v-for="(stat, model) in qoderStore.modelDistribution"
+              :key="model"
+              class="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-zinc-800/60 border border-slate-200/60 dark:border-zinc-700/60 flex items-center gap-2 text-xs font-mono"
+            >
+              <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+              <span class="font-semibold text-slate-800 dark:text-zinc-200">{{ model }}</span>
+              <span class="text-slate-400">·</span>
+              <span class="text-slate-600 dark:text-zinc-400">{{ stat.count }} 次</span>
+              <span class="text-slate-400">·</span>
+              <span class="text-blue-600 dark:text-blue-400">{{ stat.credits }} Credits</span>
+              <span class="text-slate-400">·</span>
+              <span class="text-emerald-600 dark:text-emerald-400">均耗 {{ stat.avgSec }}s</span>
+            </div>
+          </div>
+
+          <!-- 历史流水列表 -->
+          <div class="overflow-x-auto max-h-[380px] border border-slate-100 dark:border-zinc-800/80 rounded-xl">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 dark:bg-zinc-800/60 text-slate-400 dark:text-zinc-500 font-mono uppercase text-[10px] sticky top-0 border-b border-slate-200/60 dark:border-zinc-800">
+                <tr>
+                  <th class="py-2.5 px-3 font-semibold">触发时间</th>
+                  <th class="py-2.5 px-3 font-semibold">客户端</th>
+                  <th class="py-2.5 px-3 font-semibold">模型分类</th>
+                  <th class="py-2.5 px-3 font-semibold">真实耗时</th>
+                  <th class="py-2.5 px-3 font-semibold">消耗积分</th>
+                  <th class="py-2.5 px-3 font-semibold">会话标识</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-zinc-800/60 font-mono text-[11px]">
+                <tr
+                  v-for="item in qoderStore.histories"
+                  :key="item.business_id || item.time"
+                  class="hover:bg-slate-50/60 dark:hover:bg-zinc-800/40 transition"
+                >
+                  <td class="py-2.5 px-3 text-slate-600 dark:text-zinc-400 whitespace-nowrap">
+                    {{ new Date(item.begin_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) }}
+                  </td>
+                  <td class="py-2.5 px-3">
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
+                      {{ item.source }}
+                    </span>
+                  </td>
+                  <td class="py-2.5 px-3 font-semibold text-slate-800 dark:text-zinc-200">
+                    {{ item.model_category }}
+                  </td>
+                  <td class="py-2.5 px-3 text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
+                    {{ item.duration_sec }}s
+                  </td>
+                  <td class="py-2.5 px-3 text-emerald-600 dark:text-emerald-400 font-bold whitespace-nowrap">
+                    {{ item.credits }} Credits
+                  </td>
+                  <td class="py-2.5 px-3 text-slate-400 dark:text-zinc-500 text-[10px] truncate max-w-[150px]" :title="item.session_id">
+                    {{ item.session_id ? item.session_id.slice(0, 8) + '...' : '--' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </template>
+    </main>
+  </div>
 </template>

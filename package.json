@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
-    "build": "wxt build",
+    "build": "wxt build && node scripts/sanitize-utf8.mjs && cp -r .output/chrome-mv3/* .output/chrome-mv3-dev/",
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",

@@ -1,261 +1,88 @@
 <script lang="ts" setup>
-import { ref } from 'vue';
-import { useTextSelection } from './composables/useSelection';
-import SelectionPopover from './components/SelectionPopover.vue';
-import { useElementClipper, type ClippedElementInfo } from './composables/useElementClipper';
-import ElementClipper from './components/ElementClipper.vue';
-import { captureVisibleScreenshot, downloadScreenshot, saveScreenshotToArticles } from '@/services/screenshot';
+import { ref, onMounted } from 'vue';
+import { useQoderStore } from '@/stores';
 import { sendToBackground } from '@/utils/messaging';
 
-const { selectedText, position, isVisible, clearSelection } = useTextSelection();
-const { isClipperActive, hoveredInfo, selectedInfo, startClipper, stopClipper } = useElementClipper();
-
+const qoderStore = useQoderStore();
 const expanded = ref(false);
-const statusToast = ref('');
-const isCapturing = ref(false);
+const visible = ref(true);
 
-function showToast(msg: string) {
-  statusToast.value = msg;
-  setTimeout(() => {
-    statusToast.value = '';
-  }, 2400);
-}
+onMounted(() => {
+  qoderStore.init();
+});
 
-async function handleOpenSidePanel() {
+async function openSidePanel() {
   await sendToBackground('OPEN_SIDEPANEL');
   expanded.value = false;
-}
-
-async function handleOpenOptions() {
-  await sendToBackground('OPEN_OPTIONS');
-  expanded.value = false;
-}
-
-async function handleOpenChatStudio() {
-  await sendToBackground('OPEN_CHAT');
-  expanded.value = false;
-}
-
-// 启动网页元素剪藏器
-function handleStartClipper() {
-  expanded.value = false;
-  startClipper();
-  showToast('元素拾取已开启：鼠标悬停选择，点击锁定，Esc 退出');
-}
-
-// 保存剪藏的 DOM 元素到离线数据库
-async function handleSaveClippedElement(info: ClippedElementInfo) {
-  try {
-    showToast('正在归档剪藏元素...');
-    const res = await sendToBackground('SAVE_ARTICLE', {
-      url: window.location.href,
-      title: `[网页剪藏] <${info.tagName}> ${document.title || ''}`,
-      content: `来源网址: ${window.location.href}\n元素标签: <${info.tagName}>\n类名: ${info.className}\n\n### 提取文本内容\n${info.text}\n\n### HTML 源码\n\`\`\`html\n${info.html}\n\`\`\``,
-      tags: ['网页剪藏', info.tagName],
-    });
-    if (res?.success) {
-      showToast('已成功存入离线文库！');
-    }
-    stopClipper();
-  } catch (err: any) {
-    showToast('剪藏失败: ' + err.message);
-  }
-}
-
-// 捕获可视区域高画质快照并保存
-async function handleCaptureScreenshot() {
-  if (isCapturing.value) return;
-  isCapturing.value = true;
-  expanded.value = false;
-  showToast('正在捕获高画质快照...');
-
-  try {
-    const dataUrl = await captureVisibleScreenshot();
-    if (!dataUrl) {
-      showToast('截屏失败，未获取到图像数据');
-      return;
-    }
-    // 自动保存 PNG 文件
-    const filename = `snapshot-${Date.now()}.png`;
-    downloadScreenshot(dataUrl, filename);
-    // 同时持久化到 Dexie 知识库
-    await saveScreenshotToArticles(dataUrl, document.title || '网页可视快照');
-    showToast('快照捕获成功并已下载存档！');
-  } catch (err: any) {
-    showToast('截屏失败: ' + err.message);
-  } finally {
-    isCapturing.value = false;
-  }
-}
-
-// 一键快速全文提取
-async function handleQuickExtract() {
-  showToast('正在提取当前页正文...');
-  try {
-    const res = await sendToBackground('SAVE_ARTICLE', {
-      url: window.location.href,
-      title: document.title || '网页快照',
-      content: `URL: ${window.location.href}\nTitle: ${document.title}\n\n已成功从宿主页面捕获。`,
-      tags: ['悬浮球提取'],
-    });
-    if (res?.success) {
-      showToast('已成功归档至离线文库！');
-    }
-  } catch (err: any) {
-    showToast('提取失败: ' + err.message);
-  }
 }
 </script>
 
 <template>
-  <div class="font-sans antialiased select-none text-neutral-900 dark:text-white">
-    <!-- 1. 全局划词选区悬浮胶囊工具栏 -->
-    <SelectionPopover
-      :text="selectedText"
-      :position="position"
-      :visible="isVisible"
-      @close="clearSelection"
-    />
-
-    <!-- 2. 网页元素高亮拾取器 (Element Clipper) -->
-    <ElementClipper
-      :active="isClipperActive"
-      :hovered="hoveredInfo"
-      :selected="selectedInfo"
-      @save="handleSaveClippedElement"
-      @cancel="stopClipper"
-    />
-
-    <!-- 3. 右下角常驻悬浮快捷球与卡片 -->
-    <div class="fixed bottom-6 right-6 z-[999999]">
-      <!-- 快捷反馈 Toast -->
-      <div
-        v-if="statusToast"
-        class="absolute -top-10 right-0 z-10 px-3 py-1 rounded-full bg-black/85 text-white text-xs font-medium shadow-lg whitespace-nowrap animate-in fade-in"
-      >
-        {{ statusToast }}
-      </div>
-
-      <!-- 展开的 Apple 风格快捷卡片 -->
-      <div
-        v-if="expanded"
-        class="mb-3 w-76 rounded-2xl bg-white/95 dark:bg-[#1c1c1e]/95 p-3.5 text-neutral-850 dark:text-neutral-100 shadow-[0_16px_40px_rgba(0,0,0,0.22)] border border-black/10 dark:border-white/10 backdrop-blur-2xl transition-all duration-200 animate-in fade-in zoom-in-95"
-      >
-        <!-- 顶栏 -->
-        <div class="flex items-center justify-between pb-2 border-b border-black/[0.06] dark:border-white/[0.08]">
-          <div class="flex items-center gap-2">
-            <span class="flex h-5 w-5 items-center justify-center rounded-full bg-[#007AFF] text-white">
-              <i class="i-lucide-apple text-xs" />
-            </span>
-            <span class="font-semibold text-xs tracking-tight">扩展助手 (Shadow DOM)</span>
+  <div v-if="visible" class="fixed bottom-6 right-6 z-[9999999] font-sans antialiased text-slate-800 select-none">
+    <!-- 展开悬浮卡片 -->
+    <div
+      v-if="expanded"
+      class="mb-3 w-72 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-2xl p-4 shadow-2xl border border-slate-200/80 dark:border-zinc-800 text-slate-800 dark:text-zinc-100 flex flex-col gap-3 transition-all duration-300 animate-in fade-in zoom-in-95"
+    >
+      <div class="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-2.5">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded-lg bg-blue-600 text-white font-bold text-xs flex items-center justify-center">
+            Q
           </div>
-          <button
-            type="button"
-            class="rounded-full p-1 text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors border-0 bg-transparent cursor-pointer"
-            @click="expanded = false"
-          >
-            <i class="i-lucide-x text-xs" />
-          </button>
+          <div>
+            <div class="text-xs font-bold leading-tight">Qoder 效率监视器</div>
+            <div class="text-[10px] text-slate-400">实时度量胶囊</div>
+          </div>
         </div>
+        <button
+          @click="expanded = false"
+          class="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 p-1 rounded-md"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
 
-        <!-- 功能说明 -->
-        <div class="py-2.5 text-xs text-neutral-500 leading-relaxed">
-          <p>选中文字呼出<strong>划词 AI 解释 / 翻译 / 引用</strong>，或使用下列工具剪藏网页：</p>
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div class="bg-slate-50 dark:bg-zinc-800/60 p-2.5 rounded-xl border border-slate-100 dark:border-zinc-700/60">
+          <div class="text-[10px] text-slate-400 mb-0.5">今日消耗</div>
+          <div class="text-base font-bold font-mono text-blue-600 dark:text-blue-400">
+            {{ qoderStore.todayCredits }} <span class="text-[10px] font-normal">C</span>
+          </div>
         </div>
-
-        <!-- 常用快捷操作按钮组 -->
-        <div class="flex flex-col gap-1.5 pt-1">
-          <!-- 元素拾取剪藏 -->
-          <button
-            type="button"
-            class="flex items-center justify-between w-full px-3 py-2 rounded-xl text-xs font-medium text-neutral-800 dark:text-neutral-200 bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-all border-0 cursor-pointer text-left"
-            @click="handleStartClipper"
-          >
-            <span class="flex items-center gap-2">
-              <i class="i-lucide-crop text-[#007AFF] text-xs" />
-              <span>网页元素剪藏 (Element Clipper)</span>
-            </span>
-            <span class="text-[10px] text-neutral-400 font-mono">拾取</span>
-          </button>
-
-          <!-- 网页快照截屏 -->
-          <button
-            type="button"
-            class="flex items-center justify-between w-full px-3 py-2 rounded-xl text-xs font-medium text-neutral-800 dark:text-neutral-200 bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-all border-0 cursor-pointer text-left"
-            @click="handleCaptureScreenshot"
-          >
-            <span class="flex items-center gap-2">
-              <svg class="w-3.5 h-3.5 text-[#FF9500]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                <circle cx="12" cy="13" r="4"/>
-              </svg>
-              <span>可视区域快照截图</span>
-            </span>
-            <span class="text-[10px] text-neutral-400 font-mono">PNG</span>
-          </button>
-
-          <!-- 一键存入离线文库 -->
-          <button
-            type="button"
-            class="flex items-center justify-between w-full px-3 py-2 rounded-xl text-xs font-medium text-neutral-800 dark:text-neutral-200 bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-all border-0 cursor-pointer text-left"
-            @click="handleQuickExtract"
-          >
-            <span class="flex items-center gap-2">
-              <i class="i-lucide-book-open text-[#34C759] text-xs" />
-              <span>一键存入离线文库</span>
-            </span>
-            <span class="text-[10px] text-neutral-400 font-mono">全文</span>
-          </button>
-
-          <!-- 全屏 AI 工作台 -->
-          <button
-            type="button"
-            class="flex items-center justify-between w-full px-3 py-2 rounded-xl text-xs font-medium text-neutral-800 dark:text-neutral-200 bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-all border-0 cursor-pointer text-left"
-            @click="handleOpenChatStudio"
-          >
-            <span class="flex items-center gap-2">
-              <i class="i-lucide-bot text-[#007AFF] text-xs" />
-              <span>全屏 AI 智能助手 (Studio)</span>
-            </span>
-            <span class="text-[10px] text-neutral-400 font-mono">新标签</span>
-          </button>
-
-          <!-- 打开侧边栏 -->
-          <button
-            type="button"
-            class="flex items-center justify-between w-full px-3 py-2 rounded-xl text-xs font-medium text-neutral-800 dark:text-neutral-200 bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-all border-0 cursor-pointer text-left"
-            @click="handleOpenSidePanel"
-          >
-            <span class="flex items-center gap-2">
-              <i class="i-lucide-panel-right text-[#AF52DE] text-xs" />
-              <span>打开侧边栏 (Side Panel)</span>
-            </span>
-            <span class="text-[10px] text-neutral-400 font-mono">⌘⇧S</span>
-          </button>
-
-          <!-- 偏好设置 -->
-          <button
-            type="button"
-            class="flex items-center justify-between w-full px-3 py-2 rounded-xl text-xs font-medium text-neutral-800 dark:text-neutral-200 bg-black/[0.04] dark:bg-white/[0.06] hover:bg-black/[0.08] dark:hover:bg-white/[0.1] transition-all border-0 cursor-pointer text-left"
-            @click="handleOpenOptions"
-          >
-            <span class="flex items-center gap-2">
-              <i class="i-lucide-settings text-neutral-500 text-xs" />
-              <span>偏好设置 (Options)</span>
-            </span>
-          </button>
+        <div class="bg-slate-50 dark:bg-zinc-800/60 p-2.5 rounded-xl border border-slate-100 dark:border-zinc-700/60">
+          <div class="text-[10px] text-slate-400 mb-0.5">平均交互耗时</div>
+          <div class="text-base font-bold font-mono text-slate-800 dark:text-zinc-200">
+            {{ qoderStore.avgDurationSec }} <span class="text-[10px] font-normal">s</span>
+          </div>
         </div>
       </div>
 
-      <!-- 悬浮胶囊触发器 -->
       <button
-        type="button"
-        class="flex h-10 px-3.5 items-center gap-2 rounded-full bg-white/95 dark:bg-[#1c1c1e]/95 text-neutral-800 dark:text-neutral-100 shadow-[0_8px_25px_rgba(0,0,0,0.18)] border border-black/10 dark:border-white/10 backdrop-blur-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer font-medium text-xs"
-        @click="expanded = !expanded"
+        @click="openSidePanel"
+        class="w-full py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition flex items-center justify-center gap-1.5 shadow-sm"
       >
-        <i class="i-lucide-sparkles text-[#007AFF] text-sm" />
-        <span class="text-xs">扩展助手</span>
+        <span>打开侧边栏完整看板</span>
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
       </button>
+    </div>
+
+    <!-- 极简收起胶囊按钮 (Floating Pill) -->
+    <div
+      @click="expanded = !expanded"
+      class="cursor-pointer group flex items-center gap-2 bg-slate-900/90 hover:bg-slate-900 text-white dark:bg-zinc-100/95 dark:hover:bg-white dark:text-zinc-900 px-3.5 py-2 rounded-full shadow-xl hover:shadow-2xl transition-all duration-200 border border-white/20 dark:border-zinc-300"
+    >
+      <div class="w-5 h-5 rounded-full bg-blue-500 text-white font-bold text-[10px] flex items-center justify-center">
+        Q
+      </div>
+      <div class="text-xs font-mono font-medium flex items-center gap-2">
+        <span>今日: {{ qoderStore.todayCredits }} C</span>
+        <span class="opacity-40">|</span>
+        <span class="text-emerald-400 dark:text-emerald-600">{{ qoderStore.avgDurationSec }}s 均耗</span>
+      </div>
     </div>
   </div>
 </template>
